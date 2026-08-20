@@ -26,6 +26,8 @@ idf_component_register(
         esp_driver_i2s
         esp_driver_gpio
         esp_driver_sdmmc
+        esp_mm
+        esp_driver_ppa
         sdmmc
         fatfs
         wear_levelling

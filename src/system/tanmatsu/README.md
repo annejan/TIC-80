@@ -8,7 +8,7 @@ console, code editor, sprite, map, SFX and music editors, and the surf browser.
 
 | Part | Driven through |
 |------|----------------|
-| 480x800 MIPI DSI panel (ST7701) | `bsp_display_blit()`, RGB565, rotated a quarter turn, 3x nearest-neighbour scale |
+| 480x800 MIPI DSI panel (ST7701) | PPA scale-rotate-mirror straight into the panel framebuffer |
 | Keyboard (TCA8418) | `bsp_input_get_queue()`, scancode and navigation events |
 | ES8156 audio codec | `bsp_audio_*` plus a direct I2S write, 44100 Hz 16 bit stereo |
 | SD card and internal FAT | ESP-IDF VFS, mounted at `/sd` and `/int` |
@@ -20,10 +20,19 @@ with the rest painted black once at startup. All four rotations are handled:
 one TIC-80 row or column always becomes one panel row, which keeps the scaling
 a memcpy.
 
-Two things about `bsp_display_blit()` are worth knowing, because its header
-documents neither: it takes **end coordinates**, not a width and a height, and
-it waits on a flush semaphore that a rejected blit never releases, so a single
-bad call costs a full second on the next one.
+Both the scaling and the rotation are done by the **PPA**, the ESP32-P4's pixel
+processing accelerator, reading TIC-80's buffer and writing the panel's own
+framebuffer in one DMA pass. The CPU touches no pixels at all. TIC-80 is asked
+for `BGRA8888` for exactly this reason: in memory that is B,G,R,A, which is
+what the PPA calls ARGB8888, so its buffer is fed to the hardware untouched.
+
+There are two fallbacks behind that, used if the PPA client cannot be created
+or the panel framebuffer cannot be reached: the same rotation and scaling on
+the CPU straight into the panel framebuffer, and failing that a scratch buffer
+pushed out with `bsp_display_blit()`. Two things about that call are worth
+knowing, because its header documents neither: it takes **end coordinates**,
+not a width and a height, and it waits on a flush semaphore that a rejected
+blit never releases, so a single bad call costs a full second on the next one.
 
 ## Building
 
@@ -71,6 +80,31 @@ Gamepad input follows TIC-80's usual keyboard mapping: arrows for the d-pad,
 Carts and configuration go in `/sd/tic80` when an SD card is mounted, and in
 `/int/tic80` on internal flash when there is none. Both are FAT, so a card can
 be filled with `.tic` files from a desktop.
+
+## Speed
+
+60 fps, measured on hardware with the profiler in `tic80_tanmatsu.c` (set
+`TIC80_TANMATSU_PROFILE` to 1):
+
+| Stage | Per frame |
+|-------|-----------|
+| `studio_tick` plus `studio_sound` | 10.9 ms |
+| present (PPA) | 4.6 ms |
+| audio write | 1.1 ms, which is the loop waiting on the 60 Hz codec |
+| input | 0.03 ms |
+
+It started at 32 fps. Two thirds of the gain came from the display path: the
+first version scaled and rotated on the CPU into its own buffer and then called
+`bsp_display_blit()`, which on a DPI panel *copies* that buffer into the
+driver's framebuffer. That was 663 KiB written, 663 KiB read and 663 KiB
+written again for every frame. Handing the whole job to the PPA took present
+from 14.2 ms to 4.6 ms, and `studio_tick` got faster too, from 16.0 ms to
+10.9 ms, because the CPU stopped pushing all those pixels through the cache.
+
+The rest came from `sdkconfigs/tanmatsu`: dynamic frequency scaling off, and
+the L2 cache raised from 128 KiB to 256 KiB. Note that 400 MHz is not
+available; this board is `Chip rev: v1.0`, and pre-v3 P4 silicon rejects it
+with "invalid CPU frequency value" from `esp_clk_init`.
 
 ## Verified on hardware
 

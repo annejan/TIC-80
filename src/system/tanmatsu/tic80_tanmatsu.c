@@ -36,6 +36,16 @@
 
 static char const TAG[] = "tic80";
 
+// Prints where each frame goes, every couple of seconds. Cheap enough to leave
+// on: two timer reads per stage.
+// Set to 1 to log where each frame goes. Off by default: it prints every
+// couple of seconds, which is noise once the numbers are known.
+#ifndef TIC80_TANMATSU_PROFILE
+#define TIC80_TANMATSU_PROFILE 0
+#endif
+
+#define PROFILE_FRAMES 120
+
 static struct {
     Studio*     studio;
     tic80_input input;
@@ -180,7 +190,7 @@ void tic80_tanmatsu_main(void) {
     char*       argv[] = {"tic80", NULL};
     const char* root   = tanmatsu_storage_root();
 
-    platform.studio = studio_create(1, argv, TIC80_SAMPLERATE, TIC80_PIXEL_COLOR_RGBA8888, root, INT32_MAX,
+    platform.studio = studio_create(1, argv, TIC80_SAMPLERATE, TIC80_PIXEL_COLOR_BGRA8888, root, INT32_MAX,
                                     tic_layout_qwerty);
     if (platform.studio == NULL) {
         ESP_LOGE(TAG, "Failed to create the studio");
@@ -193,11 +203,31 @@ void tic80_tanmatsu_main(void) {
 
     TickType_t next_frame = xTaskGetTickCount();
 
+#if TIC80_TANMATSU_PROFILE
+    uint64_t spent_input = 0, spent_tick = 0, spent_audio = 0, spent_present = 0;
+    uint32_t frames      = 0;
+    int64_t  window      = esp_timer_get_time();
+#endif
+
     while (!studio_alive(platform.studio) && !tanmatsu_input_quit()) {
+#if TIC80_TANMATSU_PROFILE
+        int64_t mark = esp_timer_get_time();
+#define PROFILE_LAP(counter)                          \
+    do {                                              \
+        int64_t now = esp_timer_get_time();           \
+        (counter) += (uint64_t)(now - mark);          \
+        mark = now;                                   \
+    } while (0)
+#else
+#define PROFILE_LAP(counter) do { } while (0)
+#endif
+
         tanmatsu_input_poll(&platform.input);
+        PROFILE_LAP(spent_input);
 
         studio_tick(platform.studio, platform.input);
         studio_sound(platform.studio);
+        PROFILE_LAP(spent_tick);
 
         if (platform.audio) {
             // Writing a frame of audio blocks until the codec has room, which
@@ -206,8 +236,26 @@ void tic80_tanmatsu_main(void) {
         } else {
             vTaskDelayUntil(&next_frame, pdMS_TO_TICKS(1000 / TIC80_FRAMERATE));
         }
+        PROFILE_LAP(spent_audio);
 
         tanmatsu_display_present(product->screen);
+        PROFILE_LAP(spent_present);
+
+#if TIC80_TANMATSU_PROFILE
+        if (++frames >= PROFILE_FRAMES) {
+            int64_t elapsed = esp_timer_get_time() - window;
+            ESP_LOGI(TAG,
+                     "%u frames in %lld ms (%lld fps) | per frame: input %lluus tick %lluus audio %lluus "
+                     "present %lluus",
+                     (unsigned)frames, elapsed / 1000, (long long)(frames * 1000000LL / (elapsed ? elapsed : 1)),
+                     (unsigned long long)(spent_input / frames), (unsigned long long)(spent_tick / frames),
+                     (unsigned long long)(spent_audio / frames), (unsigned long long)(spent_present / frames));
+
+            spent_input = spent_tick = spent_audio = spent_present = 0;
+            frames                                                 = 0;
+            window                                                 = esp_timer_get_time();
+        }
+#endif
     }
 
     ESP_LOGI(TAG, "Shutting down");
