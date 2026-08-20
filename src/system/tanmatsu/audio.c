@@ -33,16 +33,29 @@ static char const TAG[] = "tic80-audio";
 static i2s_chan_handle_t i2s_handle = NULL;
 
 esp_err_t tanmatsu_audio_init(void) {
-    esp_err_t res = bsp_audio_set_rate(TIC80_SAMPLERATE);
-    if (res != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to set the sample rate: %s", esp_err_to_name(res));
-        return res;
-    }
-
-    res = bsp_audio_get_i2s_handle(&i2s_handle);
+    esp_err_t res = bsp_audio_get_i2s_handle(&i2s_handle);
     if (res != ESP_OK) {
         ESP_LOGE(TAG, "Failed to get the I2S handle: %s", esp_err_to_name(res));
         return res;
+    }
+
+    // The BSP already brings the codec up at 44100 Hz, which is what TIC-80
+    // wants, but say so anyway in case that default ever moves. The clock can
+    // only be reconfigured while the channel is disabled, and the BSP leaves
+    // it enabled.
+    if (i2s_channel_disable(i2s_handle) == ESP_OK) {
+        res = bsp_audio_set_rate(TIC80_SAMPLERATE);
+        if (res != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to set the sample rate: %s", esp_err_to_name(res));
+        }
+
+        res = i2s_channel_enable(i2s_handle);
+        if (res != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to re-enable the I2S channel: %s", esp_err_to_name(res));
+            return res;
+        }
+    } else {
+        ESP_LOGW(TAG, "Could not disable the I2S channel, keeping the rate the BSP set");
     }
 
     res = bsp_audio_set_amplifier(true);

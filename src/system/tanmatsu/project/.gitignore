@@ -7,3 +7,4 @@ dependencies.lock
 
 # The Tanmatsu project ships a Makefile; the repo-wide ignore is for CMake output.
 !Makefile
+badgelink/
