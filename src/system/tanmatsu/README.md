@@ -8,13 +8,22 @@ console, code editor, sprite, map, SFX and music editors, and the surf browser.
 
 | Part | Driven through |
 |------|----------------|
-| 800x480 MIPI DSI panel | `bsp_display_blit()`, RGB565, 3x nearest-neighbour scale |
+| 480x800 MIPI DSI panel (ST7701) | `bsp_display_blit()`, RGB565, rotated a quarter turn, 3x nearest-neighbour scale |
 | Keyboard (TCA8418) | `bsp_input_get_queue()`, scancode and navigation events |
 | ES8156 audio codec | `bsp_audio_*` plus a direct I2S write, 44100 Hz 16 bit stereo |
 | SD card and internal FAT | ESP-IDF VFS, mounted at `/sd` and `/int` |
 
-TIC-80 renders 256x144 pixels including the border. That is scaled 3x to
-768x432 and centred on the panel, with the rest painted black once at startup.
+TIC-80 renders 256x144 pixels including the border. The panel is portrait and
+the BSP reports a default rotation of 270 degrees, so the picture is turned a
+quarter turn on the way into the framebuffer and ends up as 432x768 at 24,16,
+with the rest painted black once at startup. All four rotations are handled:
+one TIC-80 row or column always becomes one panel row, which keeps the scaling
+a memcpy.
+
+Two things about `bsp_display_blit()` are worth knowing, because its header
+documents neither: it takes **end coordinates**, not a width and a height, and
+it waits on a flush semaphore that a rejected blit never releases, so a single
+bad call costs a full second on the next one.
 
 ## Building
 
@@ -62,6 +71,14 @@ Gamepad input follows TIC-80's usual keyboard mapping: arrows for the d-pad,
 Carts and configuration go in `/sd/tic80` when an SD card is mounted, and in
 `/int/tic80` on internal flash when there is none. Both are FAT, so a card can
 be filled with `.tic` files from a desktop.
+
+## Verified on hardware
+
+Run on a Tanmatsu on 2026-08-20, installed into AppFS with badgelink. Working:
+the studio comes up, the console takes typed input, `demo` writes the bundled
+carts to the SD card, `load` and `run` work, music and sound effects play, the
+gamepad mapping responds, the emulated pointer moves with Fn+arrows, and Fn+Esc
+returns to the launcher.
 
 ## What is not here
 
