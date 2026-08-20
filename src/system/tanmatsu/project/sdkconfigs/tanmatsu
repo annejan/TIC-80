@@ -41,3 +41,7 @@ CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_360=y
 # is enough for a column-wise walk of TIC-80's 147 KiB screen buffer, which is
 # what the display rotation does every frame.
 CONFIG_CACHE_L2_CACHE_256KB=y
+# Handing out internal RAM first was measured and made things worse: with a
+# 128 KiB threshold fire.tic went from 43.1 ms to 47.3 ms a frame. Cached PSRAM
+# is doing better here than a scramble for the small internal pool, so the
+# threshold stays where the default put it.

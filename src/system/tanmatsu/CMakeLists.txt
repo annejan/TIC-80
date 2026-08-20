@@ -37,6 +37,12 @@ idf_component_register(
 
 target_compile_definitions(${COMPONENT_LIB} PUBLIC ${TIC80_TANMATSU_DEFINITIONS})
 
+# -DTIC80_PROFILE=ON logs where each frame goes, every couple of seconds.
+option(TIC80_PROFILE "Log per-frame timings" OFF)
+if(TIC80_PROFILE)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE TIC80_TANMATSU_PROFILE=1)
+endif()
+
 # TIC-80 and its vendored libraries are older and noisier than the ESP-IDF
 # default warning set; none of these are actionable from this port.
 target_compile_options(${COMPONENT_LIB} PRIVATE

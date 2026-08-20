@@ -93,6 +93,12 @@ be filled with `.tic` files from a desktop.
 | audio write | 1.1 ms, which is the loop waiting on the 60 Hz codec |
 | input | 0.03 ms |
 
+Carts that do per-pixel work in Lua are a different story: `fire.tic` spends
+43 ms a frame inside `studio_tick` and runs at 20 fps. That is the Lua VM and
+TIC-80's own drawing, not the display path, which stays at its 4.6 ms.
+Handing out internal RAM first to try to move TIC-80's VRAM out of PSRAM was
+measured and made it worse, 47.3 ms, so it was reverted.
+
 It started at 32 fps. Two thirds of the gain came from the display path: the
 first version scaled and rotated on the CPU into its own buffer and then called
 `bsp_display_blit()`, which on a DPI panel *copies* that buffer into the
@@ -105,6 +111,24 @@ The rest came from `sdkconfigs/tanmatsu`: dynamic frequency scaling off, and
 the L2 cache raised from 128 KiB to 256 KiB. Note that 400 MHz is not
 available; this board is `Chip rev: v1.0`, and pre-v3 P4 silicon rejects it
 with "invalid CPU frequency value" from `esp_clk_init`.
+
+## Installing
+
+The app goes into AppFS with badgelink, which leaves the launcher firmware
+alone. The badge has to be in USB device mode first: launcher home screen,
+purple diamond, the icon top right turns from a bug into a USB symbol.
+
+```sh
+cd badgelink/tools
+./badgelink.sh appfs upload tic80 "TIC-80" 1 path/to/tic80.bin
+./badgelink.sh fs mkdir /int/apps/tic80
+./badgelink.sh fs upload /int/apps/tic80/metadata.json  ../../../appfs/metadata.json
+./badgelink.sh fs upload /int/apps/tic80/icon32.png     ../../../appfs/icon32.png
+```
+
+The launcher takes the name, description and icon from that metadata; without
+it the app still runs but shows the default icon. `appfs/icon32.png` is
+TIC-80's own artwork, resized from `build/linux/tic80.png`.
 
 ## Verified on hardware
 
