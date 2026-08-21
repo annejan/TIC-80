@@ -47,9 +47,12 @@ CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
 
 # Performance. TIC-80's working set lives in PSRAM, so cache size and clock
 # both matter more here than they would for a typical badge app.
-# Dynamic frequency scaling is off on purpose: it clocks down under exactly the
-# load we care about. Costs battery life.
-CONFIG_PM_ENABLE=n
+# Dynamic frequency scaling back on, and measured rather than assumed: the main
+# loop is busy for about 15.7 ms of every 16.7 ms, so there is little idle for
+# it to scale into and little to lose, while this is a battery powered handheld
+# that would otherwise sit at full clock forever.
+CONFIG_PM_ENABLE=y
+CONFIG_PM_DFS_INIT_AUTO=y
 # 400 MHz is rejected on pre-v3 P4 silicon ("invalid CPU frequency value" from
 # esp_clk_init), and this board selects REV_LESS_V3, so 360 MHz is the ceiling.
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_360=y
