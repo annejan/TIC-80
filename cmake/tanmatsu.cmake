@@ -178,6 +178,11 @@ set(TIC80_TANMATSU_DEFINITIONS
     BUILD_SURF
     BUILD_DEPRECATED
     LUA_COMPAT_5_2
+    # 32-bit ints and single precision floats for Lua, as the 3DS port does.
+    # This core is rv32imafc with the ilp32f ABI, so it has hardware single
+    # precision but emulates doubles in software, and Lua numbers are doubles by
+    # default. Carts doing per-pixel maths pay for that on every operation.
+    LUA_32BITS
     PNG_ARM_NEON_OPT=0
     __TANMATSU__=1
 )
