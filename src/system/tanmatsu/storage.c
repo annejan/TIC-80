@@ -31,6 +31,7 @@
 
 #include "driver/gpio.h"
 #include "driver/sdmmc_host.h"
+#include "esp_idf_version.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_vfs_fat.h"
@@ -64,6 +65,27 @@ static esp_err_t mount_internal(void) {
 }
 
 #if defined(CONFIG_BSP_TARGET_TANMATSU)
+
+// The ESP32-C6 radio is reached over SDIO on the same SDMMC controller as the
+// SD card slot. With ESP-Hosted in the build it initialises that controller
+// itself, and letting the card driver do it again leaves the card unmountable:
+// the launcher shows the card, TIC-80 does not. Same workaround as the
+// launcher's sdcard.c.
+#if defined(CONFIG_ESP_HOSTED_SDIO_HOST_INTERFACE) && (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0))
+#define SDCARD_HOSTED_OWNS_THE_HOST 1
+#else
+#define SDCARD_HOSTED_OWNS_THE_HOST 0
+#endif
+
+#if SDCARD_HOSTED_OWNS_THE_HOST
+static esp_err_t sdmmc_host_init_noop(void) {
+    return ESP_OK;
+}
+
+static esp_err_t sdmmc_host_deinit_noop(void) {
+    return ESP_OK;
+}
+#endif
 
 static esp_err_t power_cycle_sd_card(void) {
     gpio_config_t gpio_cfg = {
@@ -110,6 +132,11 @@ static esp_err_t mount_sd_card(void) {
     host.slot            = SDMMC_HOST_SLOT_0;
     host.max_freq_khz    = SDMMC_FREQ_HIGHSPEED;
     host.pwr_ctrl_handle = sd_pwr_handle;
+
+#if SDCARD_HOSTED_OWNS_THE_HOST
+    host.init   = &sdmmc_host_init_noop;
+    host.deinit = &sdmmc_host_deinit_noop;
+#endif
 
     static uint8_t* dma_buf = NULL;
     if (dma_buf == NULL) {
@@ -173,10 +200,14 @@ esp_err_t tanmatsu_storage_init(void) {
 
     // Carts live on the SD card when there is one; it is bigger and it is what
     // people can take out and copy files onto.
-    if (mount_sd_card() == ESP_OK) {
+    esp_err_t sd = mount_sd_card();
+    if (sd == ESP_OK) {
         ESP_LOGI(TAG, "SD card mounted at " SD_MOUNT_POINT);
         snprintf(root, sizeof(root), SD_MOUNT_POINT "/" TIC80_DIRECTORY);
     } else if (have_internal) {
+        // Worth saying out loud: carts saved on the card are not missing, they
+        // are simply not reachable, and anything saved now goes elsewhere.
+        ESP_LOGW(TAG, "No SD card (%s), using internal flash instead", esp_err_to_name(sd));
         snprintf(root, sizeof(root), INTERNAL_MOUNT_POINT "/" TIC80_DIRECTORY);
     } else {
         ESP_LOGE(TAG, "No writable filesystem, TIC-80 will not be able to save");
