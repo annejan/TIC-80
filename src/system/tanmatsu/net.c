@@ -271,7 +271,12 @@ static void worker_task(void* arg) {
             get->status = -1;
         }
 
+        // Publish under the lock so that everything written above is visible to
+        // the main task by the time it sees done, rather than relying on the
+        // order two cores happen to observe stores in.
+        xSemaphoreTake(net->lock, portMAX_DELAY);
         get->done = true;
+        xSemaphoreGive(net->lock);
     }
 }
 
@@ -328,15 +333,12 @@ void tic_net_get(tic_net* net, const char* url, net_get_callback callback, void*
 
     xSemaphoreGive(net->lock);
 
-    if (slot < 0 || xQueueSend(net->work, &get, 0) != pdTRUE) {
-        // Nowhere to put it, so report the failure rather than dropping it and
-        // leaving the caller waiting for a callback that never comes.
-        if (slot >= 0) {
-            xSemaphoreTake(net->lock, portMAX_DELAY);
-            net->requests[slot] = NULL;
-            xSemaphoreGive(net->lock);
-        }
-
+    if (slot < 0) {
+        // Every slot is busy. Report the failure rather than dropping the
+        // request and leaving the caller waiting for a callback that never
+        // comes. This is the one place a callback runs inside tic_net_get
+        // rather than from tic_net_end, and it takes eight requests in flight
+        // at once to reach it.
         net_get_data data = {
             .type       = net_get_error,
             .calldata   = calldata,
@@ -345,6 +347,17 @@ void tic_net_get(tic_net* net, const char* url, net_get_callback callback, void*
         };
         callback(&data);
         free(get);
+        return;
+    }
+
+    // The queue is as long as the slot table, so having a slot means this
+    // cannot fail; treat it as a finished failure if it ever does, so the
+    // result still goes out through tic_net_end.
+    if (xQueueSend(net->work, &get, 0) != pdTRUE) {
+        xSemaphoreTake(net->lock, portMAX_DELAY);
+        get->status = -1;
+        get->done   = true;
+        xSemaphoreGive(net->lock);
     }
 }
 
