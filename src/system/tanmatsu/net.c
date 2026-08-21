@@ -87,6 +87,11 @@ static volatile bool wifi_settled = false;
 // that is a crash rather than a failure.
 static volatile bool wifi_stack_up = false;
 
+// Set when the attempt to join finished without a network. There is then
+// nothing to wait for, and making every request sit out the full budget only
+// makes the machine feel broken.
+static volatile bool wifi_gave_up = false;
+
 static void wifi_task(void* arg) {
     (void)arg;
 
@@ -123,6 +128,7 @@ static void wifi_task(void* arg) {
 
     if (wifi_connect_try_all() != ESP_OK) {
         ESP_LOGW(TAG, "No network joined, TIC-80 stays offline");
+        wifi_gave_up = true;
     } else {
         ESP_LOGI(TAG, "Network %s", wifi_connection_is_connected() ? "up" : "unavailable");
     }
@@ -171,6 +177,12 @@ static bool network_available(void) {
     while (waited < WIFI_WAIT_MS) {
         if (wifi_connection_is_connected()) {
             return true;
+        }
+
+        // Nothing was joined and nothing is still being attempted, so waiting
+        // out the rest of the budget would only stall the caller.
+        if (wifi_gave_up) {
+            return false;
         }
 
         wifi_connection_await(1000);
