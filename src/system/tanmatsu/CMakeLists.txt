@@ -51,10 +51,6 @@ endif()
 # TIC-80 and its vendored libraries are older and noisier than the ESP-IDF
 # default warning set; none of these are actionable from this port.
 target_compile_options(${COMPONENT_LIB} PRIVATE
-    # TIC-80 predates C23's reading of "()" as "(void)": include/tic80.h
-    # declares tic80_tick with unspecified arguments while tic.c defines it
-    # with the real ones, which only agree under the older standard.
-    -std=gnu17
     # Warnings in code this port does not own must not stop the build.
     -Wno-error
     -Wno-error=implicit-function-declaration
