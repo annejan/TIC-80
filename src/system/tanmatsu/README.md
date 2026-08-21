@@ -12,6 +12,7 @@ console, code editor, sprite, map, SFX and music editors, and the surf browser.
 | Keyboard (TCA8418) | `bsp_input_get_queue()`, scancode and navigation events |
 | ES8156 audio codec | `bsp_audio_*` plus a direct I2S write, 44100 Hz 16 bit stereo |
 | SD card and internal FAT | ESP-IDF VFS, mounted at `/sd` and `/int` |
+| WiFi (ESP32-C6 over ESP-Hosted) | `wifi-manager`, reusing the networks the launcher stored |
 
 TIC-80 renders 256x144 pixels including the border. The panel is portrait and
 the BSP reports a default rotation of 270 degrees, so the picture is turned a
@@ -138,18 +139,46 @@ carts to the SD card, `load` and `run` work, music and sound effects play, the
 gamepad mapping responds, the emulated pointer moves with Fn+arrows, and Fn+Esc
 returns to the launcher.
 
+## Network
+
+The port supplies its own `net.c`, the way the 3DS and Switch ports do. Requests
+are queued by `tic_net_get` and performed by a worker task with
+`esp_http_client`; `tic_net_end` hands the results to their callbacks on the
+main task, which is where the studio expects to be called back.
+
+WiFi is the ESP32-C6 reached over ESP-Hosted, and the networks are the ones the
+launcher already stored in NVS, so nothing is asked of the user. The radio is
+brought up on first use rather than at startup: it resets the coprocessor and
+takes about 35 seconds from cold to having an address.
+
+Two things about that are worth knowing, because both cost an evening:
+
+- **Bring the radio up in the launcher's order.** Power it into application
+  mode, call `wifi_remote_initialize()`, and only then
+  `wifi_connection_init_stack()`. Calling the connection manager cold leaves its
+  event group uncreated and the first connect attempt asserts inside FreeRTOS.
+- **The radio and the SD card share one SDMMC controller.** ESP-Hosted claims it
+  during early boot, so the card has to be mounted with no-op `init` and
+  `deinit` callbacks or `esp_vfs_fat_sdmmc_mount` fails with "no available sd
+  host controller" and the card silently disappears. See `storage.c`.
+
+Confirmed on hardware up to the point of a socket: the radio comes up, joins a
+stored network, gets a lease, and TIC-80 keeps running at 60 fps throughout,
+with failures staying failures rather than hangs. Actually fetching from
+tic80.com is still unproven; the network it was tried on refused the connection.
+
 ## What is not here
 
 - **Lua only.** The other TIC-80 languages are left out to keep the binary and
   the memory footprint down. MoonScript and Fennel run on the same Lua VM and
   would be cheap to add.
-- **No network.** `tic_net` is compiled as the stub that fails every request,
-  so surf browses local files but cannot reach tic80.com. Wiring it to
-  `esp_http_client` is the obvious next step.
 - **No FFT.** There is no audio input path, so the `fft()` API is compiled out
   the same way it is on the other embedded ports.
 - **No CRT shader.** There is no GPU path; the software renderer draws
   straight into the framebuffer.
+- **The network build is 1.7 MB**, against 1.0 MB without it, almost all of it
+  TLS and the WiFi stack. That matters on a device whose AppFS partition is
+  8 MB and usually has other things in it.
 
 ## How the port is put together
 

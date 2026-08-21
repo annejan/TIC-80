@@ -36,9 +36,9 @@ set(TIC80_TANMATSU_CORE_SRCS
     ${TIC80_SRC}/ext/gif.c
 )
 
-# Studio, with the editors and surf. Surf browses the local filesystem as well
-# as tic80.com, and net.c falls back to a stub that fails every request, so the
-# browser is useful for local carts even with no network layer wired up.
+# Studio, with the editors and surf. The port supplies its own net.c, the way
+# the 3DS and Switch ports do, so surf reaches tic80.com as well as the local
+# filesystem.
 set(TIC80_TANMATSU_STUDIO_SRCS
     ${TIC80_SRC}/studio/screens/run.c
     ${TIC80_SRC}/studio/screens/menu.c
@@ -46,7 +46,7 @@ set(TIC80_TANMATSU_STUDIO_SRCS
     ${TIC80_SRC}/studio/screens/start.c
     ${TIC80_SRC}/studio/screens/console.c
     ${TIC80_SRC}/studio/screens/surf.c
-    ${TIC80_SRC}/studio/net.c
+    ${TIC80_BACKEND}/net.c
     ${TIC80_SRC}/studio/editors/code.c
     ${TIC80_SRC}/studio/editors/sprite.c
     ${TIC80_SRC}/studio/editors/map.c

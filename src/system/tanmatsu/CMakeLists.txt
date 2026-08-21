@@ -33,6 +33,11 @@ idf_component_register(
         wear_levelling
         nvs_flash
         vfs
+        # Networking, for surf and the version check.
+        esp_http_client
+        mbedtls
+        wifi-manager
+        tanmatsu-wifi
 )
 
 target_compile_definitions(${COMPONENT_LIB} PUBLIC ${TIC80_TANMATSU_DEFINITIONS})
