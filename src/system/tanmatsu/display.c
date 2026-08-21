@@ -49,7 +49,15 @@ static char const TAG[] = "tic80-display";
 // panel_fb is the driver's buffer when we got hold of it. framebuffer is the
 // fallback buffer used with bsp_display_blit() when we could not.
 static uint16_t* panel_fb    = NULL;
+static uint16_t* panel_fb_back = NULL;
 static uint16_t* framebuffer = NULL;
+
+// With two framebuffers the PPA draws into whichever one is not on screen, and
+// handing that buffer back to the driver switches to it rather than copying it:
+// esp_lcd_panel_dpi.c takes a no-copy path when the buffer it is given lies
+// inside one of its own framebuffers. Costs a second framebuffer's worth of
+// PSRAM and removes the tearing.
+static esp_lcd_panel_handle_t panel_handle = NULL;
 
 // Distance between two panel rows, in pixels. The whole panel width when
 // drawing into the driver's framebuffer, only the drawn area otherwise.
@@ -175,14 +183,20 @@ esp_err_t tanmatsu_display_init(void) {
     offset_x    = (panel_width - blit_width) / 2;
     offset_y    = (panel_height - blit_height) / 2;
 
-    esp_lcd_panel_handle_t panel = NULL;
-    if (bsp_display_get_panel(&panel) == ESP_OK &&
-        esp_lcd_dpi_panel_get_frame_buffer(panel, 1, (void**)&panel_fb) == ESP_OK && panel_fb != NULL) {
-        // Drawing into the driver's own framebuffer. The letterbox only has to
-        // be painted once, since nothing else writes here.
-        stride = panel_width;
-        memset(panel_fb, 0, panel_width * panel_height * sizeof(uint16_t));
-        esp_cache_msync(panel_fb, panel_width * panel_height * sizeof(uint16_t), ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+    if (bsp_display_get_panel(&panel_handle) == ESP_OK &&
+        esp_lcd_dpi_panel_get_frame_buffer(panel_handle, 2, (void**)&panel_fb, (void**)&panel_fb_back) == ESP_OK &&
+        panel_fb != NULL) {
+        // Drawing into the driver's own framebuffers. The letterbox only has to
+        // be painted once per buffer, since nothing else writes here.
+        stride              = panel_width;
+        size_t buffer_bytes = panel_width * panel_height * sizeof(uint16_t);
+
+        memset(panel_fb, 0, buffer_bytes);
+        esp_cache_msync(panel_fb, buffer_bytes, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+        if (panel_fb_back != NULL) {
+            memset(panel_fb_back, 0, buffer_bytes);
+            esp_cache_msync(panel_fb_back, buffer_bytes, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+        }
 
         ppa_client_config_t ppa_config = {
             .oper_type             = PPA_OPERATION_SRM,
@@ -215,10 +229,28 @@ esp_err_t tanmatsu_display_init(void) {
     return ESP_OK;
 }
 
+// Hands a framebuffer back to the driver. Because the buffer is one of its own,
+// esp_lcd_panel_dpi.c writes the cache back and switches to it instead of
+// copying, so this is the swap. With a single buffer there is nothing to switch
+// to and it is only the cache write back.
+static void swap_buffers(uint16_t* drawn) {
+    bsp_display_blit(0, offset_y, panel_width, offset_y + blit_height, drawn);
+
+    if (panel_fb_back != NULL) {
+        uint16_t* previous = panel_fb;
+        panel_fb           = panel_fb_back;
+        panel_fb_back      = previous;
+    }
+}
+
 void tanmatsu_display_present(const uint32_t* screen) {
     if (screen == NULL) {
         return;
     }
+
+    // With two buffers the next frame is drawn off screen and swapped in; with
+    // one there is nowhere else to draw, so it goes straight to the visible one.
+    uint16_t* draw_fb = panel_fb_back != NULL ? panel_fb_back : panel_fb;
 
     if (ppa_client != NULL) {
         // TIC-80's buffer is BGRA8888 in memory, which is what the PPA calls
@@ -238,7 +270,7 @@ void tanmatsu_display_present(const uint32_t* screen) {
                 },
             .out =
                 {
-                    .buffer         = panel_fb,
+                    .buffer         = draw_fb,
                     .buffer_size    = panel_width * panel_height * sizeof(uint16_t),
                     .pic_w          = panel_width,
                     .pic_h          = panel_height,
@@ -254,6 +286,7 @@ void tanmatsu_display_present(const uint32_t* screen) {
 
         esp_err_t res = ppa_do_scale_rotate_mirror(ppa_client, &operation);
         if (res == ESP_OK) {
+            swap_buffers(draw_fb);
             return;
         }
 
@@ -261,7 +294,7 @@ void tanmatsu_display_present(const uint32_t* screen) {
         ppa_client = NULL;
     }
 
-    uint16_t* target = panel_fb ? panel_fb + offset_y * stride + offset_x : framebuffer;
+    uint16_t* target = panel_fb ? draw_fb + offset_y * stride + offset_x : framebuffer;
     if (target == NULL) {
         return;
     }
@@ -298,13 +331,7 @@ void tanmatsu_display_present(const uint32_t* screen) {
     }
 
     if (panel_fb) {
-        // The DSI reads the framebuffer out of PSRAM, so what we just wrote has
-        // to leave the cache. Only the band of rows we touched needs syncing,
-        // and it is contiguous because whole rows lie between its first and
-        // last one.
-        uint8_t* band       = (uint8_t*)(panel_fb + offset_y * stride);
-        size_t   band_bytes = blit_height * stride * sizeof(uint16_t);
-        esp_cache_msync(band, band_bytes, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+        swap_buffers(draw_fb);
     } else {
         // bsp_display_blit takes end coordinates, not a width and a height.
         bsp_display_blit(offset_x, offset_y, offset_x + blit_width, offset_y + blit_height, framebuffer);

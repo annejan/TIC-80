@@ -157,7 +157,9 @@ static esp_err_t initialize_hardware(void) {
         .display =
             {
                 .requested_color_format = BSP_DISPLAY_COLOR_FORMAT_16_565RGB,
-                .num_fbs                = 1,
+                // Two, so the next frame can be drawn off screen and swapped
+                // in. See display.c.
+                .num_fbs                = 2,
             },
     };
 
