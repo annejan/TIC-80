@@ -132,8 +132,10 @@ static void wifi_task(void* arg) {
 }
 
 // Waits for the radio, but only as long as a person would tolerate before
-// deciding the thing is broken.
-#define WIFI_WAIT_MS 20000
+// deciding the thing is broken. Bringing the coprocessor up, associating and
+// getting a lease took about 35 seconds from cold on the first try, so this has
+// to cover more than the association alone.
+#define WIFI_WAIT_MS 45000
 
 // Starts the radio on first use. Only the worker task calls this, so there is
 // one caller and no need to guard against two at once.
@@ -149,17 +151,33 @@ static void wifi_start_once(void) {
 static bool network_available(void) {
     wifi_start_once();
 
-    // Wait for the radio to finish coming up, without touching the connection
-    // manager until it exists.
-    for (int waited = 0; !wifi_settled && waited < WIFI_WAIT_MS; waited += 250) {
+    int waited = 0;
+
+    // Wait for the connection manager to exist before asking it anything: its
+    // entry points dereference an event group that init_stack creates.
+    while (!wifi_settled && waited < WIFI_WAIT_MS) {
         vTaskDelay(pdMS_TO_TICKS(250));
+        waited += 250;
     }
 
     if (!wifi_stack_up) {
         return false;
     }
 
-    return wifi_connection_is_connected() || (wifi_connection_await(2000) && wifi_connection_is_connected());
+    // wifi_connect_try_all() returns once it has asked to associate, not once
+    // there is a working link, so waiting on it alone is not enough: the first
+    // request used to fail seconds before the lease arrived. Wait for the
+    // address, which is what actually makes a request possible.
+    while (waited < WIFI_WAIT_MS) {
+        if (wifi_connection_is_connected()) {
+            return true;
+        }
+
+        wifi_connection_await(1000);
+        waited += 1000;
+    }
+
+    return wifi_connection_is_connected();
 }
 
 static void perform(HttpGet* get) {
