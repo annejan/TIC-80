@@ -12,6 +12,8 @@ file(MAKE_DIRECTORY ${TIC80_GENERATED_DIR})
 tic80_tanmatsu_generate_headers(${TIC80_GENERATED_DIR})
 
 idf_component_register(
+    EMBED_TXTFILES
+        "certs/tic80_root.pem"
     SRCS
         ${TIC80_TANMATSU_SRCS}
     INCLUDE_DIRS

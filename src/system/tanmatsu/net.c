@@ -37,8 +37,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "esp_crt_bundle.h"
 #include "esp_http_client.h"
+#include "esp_netif.h"
+#include "esp_tls.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -53,6 +54,30 @@
 #define RESPONSE_LIMIT (4 * 1024 * 1024)
 
 static char const TAG[] = "tic80-net";
+
+// GTS Root R4, the trust anchor for tic80.com. See certs/README.md: this port
+// talks to exactly one host, so one root beats carrying a bundle of two
+// hundred authorities. A handshake failing with -0x3000 means this needs
+// replacing because the site moved to another authority.
+extern const uint8_t tic80_root_pem_start[] asm("_binary_tic80_root_pem_start");
+extern const uint8_t tic80_root_pem_end[] asm("_binary_tic80_root_pem_end");
+
+static bool ca_store_ready = false;
+
+static void install_ca_store(void) {
+    if (ca_store_ready) {
+        return;
+    }
+
+    esp_err_t res = esp_tls_set_global_ca_store(tic80_root_pem_start,
+                                                (unsigned int)(tic80_root_pem_end - tic80_root_pem_start));
+    if (res != ESP_OK) {
+        ESP_LOGW(TAG, "Could not install the certificate: %s", esp_err_to_name(res));
+        return;
+    }
+
+    ca_store_ready = true;
+}
 
 typedef struct {
     char url[URL_SIZE];
@@ -137,6 +162,26 @@ static void wifi_task(void* arg) {
     vTaskDelete(NULL);
 }
 
+// lwIP sends anything that is not on the local subnet through the default
+// interface. Getting an address does not make an interface the default one, and
+// without it DNS still works, because the server is usually on-link, while
+// everything beyond the gateway fails at once with "Host is unreachable".
+static void claim_default_route(void) {
+    esp_netif_t* sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+
+    if (sta == NULL) {
+        ESP_LOGW(TAG, "No station interface to route through");
+        return;
+    }
+
+    if (esp_netif_get_default_netif() == sta) {
+        return;
+    }
+
+    esp_err_t res = esp_netif_set_default_netif(sta);
+    ESP_LOGI(TAG, "Routing through the station interface: %s", esp_err_to_name(res));
+}
+
 // Waits for the radio, but only as long as a person would tolerate before
 // deciding the thing is broken. Bringing the coprocessor up, associating and
 // getting a lease took about 35 seconds from cold on the first try, so this has
@@ -176,6 +221,7 @@ static bool network_available(void) {
     // address, which is what actually makes a request possible.
     while (waited < WIFI_WAIT_MS) {
         if (wifi_connection_is_connected()) {
+            claim_default_route();
             return true;
         }
 
@@ -193,11 +239,15 @@ static bool network_available(void) {
 }
 
 static void perform(HttpGet* get) {
+    install_ca_store();
+
     esp_http_client_config_t config = {
-        .url               = get->url,
-        .timeout_ms        = 15000,
-        .crt_bundle_attach = esp_crt_bundle_attach,
-        .user_agent        = "TIC-80",
+        .url                 = get->url,
+        // Generous: a TLS handshake on a 360 MHz core over a busy network was
+        // seen to want more than fifteen seconds.
+        .timeout_ms          = 40000,
+        .use_global_ca_store = true,
+        .user_agent          = "TIC-80",
     };
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
