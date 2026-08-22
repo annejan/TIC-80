@@ -53,6 +53,9 @@
 #define MAX_REQUESTS   8
 #define RESPONSE_LIMIT (4 * 1024 * 1024)
 
+// How many times to ask the radio to join something before giving up.
+#define JOIN_ATTEMPTS  3
+
 static char const TAG[] = "tic80-net";
 
 // GTS Root R4, the trust anchor for tic80.com. See certs/README.md: this port
@@ -151,11 +154,26 @@ static void wifi_task(void* arg) {
 
     wifi_stack_up = true;
 
-    if (wifi_connect_try_all() != ESP_OK) {
+    // Associating from a cold coprocessor does not always take on the first
+    // attempt, so do not write off the session on one failure.
+    bool joined = false;
+    for (int attempt = 1; attempt <= JOIN_ATTEMPTS && !joined; attempt++) {
+        if (wifi_connect_try_all() == ESP_OK) {
+            joined = true;
+            break;
+        }
+
+        if (attempt < JOIN_ATTEMPTS) {
+            ESP_LOGW(TAG, "Nothing joined on attempt %d, trying again", attempt);
+            vTaskDelay(pdMS_TO_TICKS(2000));
+        }
+    }
+
+    if (joined) {
+        ESP_LOGI(TAG, "Network %s", wifi_connection_is_connected() ? "up" : "unavailable");
+    } else {
         ESP_LOGW(TAG, "No network joined, TIC-80 stays offline");
         wifi_gave_up = true;
-    } else {
-        ESP_LOGI(TAG, "Network %s", wifi_connection_is_connected() ? "up" : "unavailable");
     }
 
     wifi_settled = true;
@@ -238,7 +256,11 @@ static bool network_available(void) {
     return wifi_connection_is_connected();
 }
 
-static void perform(HttpGet* get) {
+// One retry. Handshakes on a busy network get dropped by the far end often
+// enough to be worth not bothering the user with, and a GET is safe to repeat.
+#define REQUEST_ATTEMPTS 2
+
+static void perform_once(HttpGet* get) {
     install_ca_store();
 
     esp_http_client_config_t config = {
@@ -315,6 +337,26 @@ static void perform(HttpGet* get) {
 
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
+}
+
+static void perform(HttpGet* get) {
+    for (int attempt = 1; attempt <= REQUEST_ATTEMPTS; attempt++) {
+        get->status = 0;
+        free(get->data);
+        get->data = NULL;
+        get->size = 0;
+
+        perform_once(get);
+
+        if (get->status == 200) {
+            return;
+        }
+
+        if (attempt < REQUEST_ATTEMPTS) {
+            ESP_LOGW(TAG, "Request for %s failed (%d), trying once more", get->url, (int)get->status);
+            vTaskDelay(pdMS_TO_TICKS(500));
+        }
+    }
 }
 
 static void worker_task(void* arg) {
