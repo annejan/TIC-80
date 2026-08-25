@@ -145,6 +145,7 @@ set(TIC80_TANMATSU_BACKEND_SRCS
     ${TIC80_BACKEND}/display.c
     ${TIC80_BACKEND}/audio.c
     ${TIC80_BACKEND}/keymap.c
+    ${TIC80_BACKEND}/usb_hid.c
     ${TIC80_BACKEND}/storage.c
 )
 

@@ -21,6 +21,7 @@
 // SOFTWARE.
 
 #include "tanmatsu.h"
+#include "usb_hid.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -264,6 +265,8 @@ void tic80_tanmatsu_main(void) {
 
     studio_delete(platform.studio);
     platform.studio = NULL;
+
+    tanmatsu_usb_hid_deinit();
 
     bsp_device_restart_to_launcher();
 }
