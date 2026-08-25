@@ -29,6 +29,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "tic.h"
+#include "usb_hid.h"
 
 static char const TAG[] = "tic80-input";
 
@@ -37,6 +38,9 @@ static char const TAG[] = "tic80-input";
 // it, Fn+left space clicks, Fn+right space right-clicks, Fn+shift+up/down
 // scrolls, and Fn+middle space latches pointer mode so Fn need not be held.
 // Fn+Esc leaves TIC-80.
+//
+// A USB keyboard, mouse or gamepad plugged into the port joins in: see
+// usb_hid.c. A real mouse moves the pointer whether or not Fn is held.
 
 #define TEXT_QUEUE_SIZE 32
 
@@ -68,6 +72,8 @@ static int32_t pointer_scroll = 0;
 // Codec volume, driven by the dedicated volume keys. TIC-80 has its own volume
 // setting which it applies to the samples in software.
 static int32_t codec_volume = 80;
+
+static tanmatsu_usb_hid_state_t usb;
 
 static char   text_queue[TEXT_QUEUE_SIZE];
 static size_t text_head = 0;
@@ -269,6 +275,21 @@ static void handle_navigation(const bsp_input_event_args_navigation_t* nav) {
     }
 }
 
+static void clamp_pointer(void) {
+    if (pointer_x < 0) {
+        pointer_x = 0;
+    }
+    if (pointer_y < 0) {
+        pointer_y = 0;
+    }
+    if (pointer_x > TIC80_FULLWIDTH - 1) {
+        pointer_x = TIC80_FULLWIDTH - 1;
+    }
+    if (pointer_y > TIC80_FULLHEIGHT - 1) {
+        pointer_y = TIC80_FULLHEIGHT - 1;
+    }
+}
+
 static void update_pointer(void) {
     pointer_scroll = 0;
 
@@ -304,18 +325,7 @@ static void update_pointer(void) {
     pointer_x += dx * speed;
     pointer_y += dy * speed;
 
-    if (pointer_x < 0) {
-        pointer_x = 0;
-    }
-    if (pointer_y < 0) {
-        pointer_y = 0;
-    }
-    if (pointer_x > TIC80_FULLWIDTH - 1) {
-        pointer_x = TIC80_FULLWIDTH - 1;
-    }
-    if (pointer_y > TIC80_FULLHEIGHT - 1) {
-        pointer_y = TIC80_FULLHEIGHT - 1;
-    }
+    clamp_pointer();
 }
 
 esp_err_t tanmatsu_input_init(void) {
@@ -326,6 +336,13 @@ esp_err_t tanmatsu_input_init(void) {
     }
 
     memset(key_state, 0, sizeof(key_state));
+
+    // A device on the USB port is a bonus, not a requirement: the built-in
+    // keyboard is what the port is built around.
+    res = tanmatsu_usb_hid_init();
+    if (res != ESP_OK) {
+        ESP_LOGW(TAG, "Continuing without USB HID: %s", esp_err_to_name(res));
+    }
 
     return ESP_OK;
 }
@@ -361,6 +378,15 @@ void tanmatsu_input_poll(tic80_input* input) {
 
     update_pointer();
 
+    tanmatsu_usb_hid_poll(&usb);
+
+    // A mouse of its own moves the pointer whatever the arrow keys are doing.
+    if (usb.mouse) {
+        pointer_x += usb.mouse_dx;
+        pointer_y += usb.mouse_dy;
+        clamp_pointer();
+    }
+
     // The arrows drive either the cursor or the game, never both at once.
     bool arrows_to_keys           = !in_pointer_mode();
     key_state[tic_key_up]         = arrows_to_keys && arrow_up;
@@ -368,22 +394,28 @@ void tanmatsu_input_poll(tic80_input* input) {
     key_state[tic_key_left]       = arrows_to_keys && arrow_left;
     key_state[tic_key_right]      = arrows_to_keys && arrow_right;
 
+    // A USB keyboard adds to the built-in one rather than replacing it. The two
+    // are merged here rather than into key_state, which only the scancodes own:
+    // a key set there by USB would never be cleared, since only a release
+    // scancode clears it, and the studio would repeat it forever.
     memset(&input->keyboard, 0, sizeof(input->keyboard));
     size_t slot = 0;
     for (tic_key key = tic_key_unknown + 1; key < tic_keys_count && slot < TIC80_KEY_BUFFER; key++) {
-        if (key_state[key]) {
+        if (key_state[key] || usb.keys[key]) {
             input->keyboard.keys[slot++] = key;
         }
     }
 
-    input->mouse.x       = (uint8_t)pointer_x;
-    input->mouse.y       = (uint8_t)pointer_y;
-    input->mouse.left    = pointer_left ? 1 : 0;
-    input->mouse.middle  = 0;
-    input->mouse.right   = pointer_right ? 1 : 0;
-    input->mouse.scrollx = 0;
-    input->mouse.scrolly = pointer_scroll;
+    input->mouse.x        = (uint8_t)pointer_x;
+    input->mouse.y        = (uint8_t)pointer_y;
+    input->mouse.left     = (pointer_left || usb.mouse_left) ? 1 : 0;
+    input->mouse.middle   = usb.mouse_middle ? 1 : 0;
+    input->mouse.right    = (pointer_right || usb.mouse_right) ? 1 : 0;
+    input->mouse.scrollx  = 0;
+    input->mouse.scrolly  = pointer_scroll + usb.mouse_scroll;
     input->mouse.relative = 0;
+
+    input->gamepads.first.data = usb.gamepad_buttons;
 }
 
 bool tanmatsu_input_text(char* out) {

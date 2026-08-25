@@ -30,6 +30,10 @@ idf_component_register(
         esp_driver_sdmmc
         esp_mm
         esp_driver_ppa
+        # USB HID host, for a keyboard, mouse or gamepad on the port.
+        usb
+        usb_host_hid
+        hid-host
         sdmmc
         fatfs
         wear_levelling

@@ -13,6 +13,7 @@ console, code editor, sprite, map, SFX and music editors, and the surf browser.
 | ES8156 audio codec | `bsp_audio_*` plus a direct I2S write, 44100 Hz 16 bit stereo |
 | SD card and internal FAT | ESP-IDF VFS, mounted at `/sd` and `/int` |
 | WiFi (ESP32-C6 over ESP-Hosted) | `wifi-manager`, reusing the networks the launcher stored |
+| USB HID on the USB-C port | `usb_host_hid` for the transfers, `badgeteam/hid-host` for the reports |
 
 TIC-80 renders 256x144 pixels including the border. The panel is portrait and
 the BSP reports a default rotation of 270 degrees, so the picture is turned a
@@ -50,9 +51,14 @@ If ESP-IDF is already installed elsewhere, point at it instead of running
 `make prepare`:
 
 ```sh
-echo /path/to/esp-idf > .IDF_PATH
-echo $HOME/.espressif > .IDF_TOOLS_PATH
+export IDF_PATH=/path/to/esp-idf
+export IDF_TOOLS_PATH=$HOME/.espressif
+export IDF_SOURCE="$IDF_PATH/export.sh"
 ```
+
+The `.IDF_PATH` and `.IDF_TOOLS_PATH` files the badge.team Makefile also looks
+for do not work: it appends its own path to whatever they contain, whether or
+not they exist, and the result is two paths in one variable.
 
 The build produces `build/tanmatsu/tic80.bin`, around 1 MB, which fits both the
 2 MB OTA slots and the 8 MB AppFS partition.
@@ -75,6 +81,28 @@ arrow cluster into a pointer:
 
 Gamepad input follows TIC-80's usual keyboard mapping: arrows for the d-pad,
 `Z` `X` `A` `S` for A, B, X and Y.
+
+### USB
+
+A keyboard, a mouse or a gamepad plugged into the USB-C port joins in, on top
+of the built-in keyboard rather than instead of it. Powering the port means
+turning the boost converter on, which costs battery whether or not anything is
+plugged in; it goes off again on the way back to the launcher.
+
+A mouse moves the pointer whether or not **Fn** is held, so the editors work
+the way they do on a desktop. A gamepad plays: the stick, the hat switch and a
+d-pad hiding in the buttons all steer, and the first four buttons the report
+descriptor numbers become A, B, X and Y.
+
+Devices do not agree on a report layout, so nothing here guesses by report
+length. `usb_hid.c` asks the device for its report descriptor and hands it to
+[badgeteam/hid-host](https://github.com/badgeteam/esp32-component-hid-host),
+which says where the axes, the hat switch and the buttons sit; a device it has
+never seen still works. Keyboards are the exception: their boot report is a
+fixed eight bytes and says everything TIC-80 asks of one.
+
+Reports are decoded on the HID driver's task and posted to a queue the main
+loop drains, so every field TIC-80 reads is written by one task.
 
 ## Where files live
 
