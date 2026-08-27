@@ -30,7 +30,8 @@
 //
 // Reports arrive on the HID driver's own task. They are decoded there and the
 // result is posted to a queue the main loop drains in tanmatsu_usb_hid_poll(),
-// which keeps every field TIC-80 reads owned by one task.
+// which keeps every field TIC-80 reads owned by one task. A mouse is the one
+// exception: see the accumulator below for why it cannot go through a queue.
 
 #include "usb_hid.h"
 
@@ -79,7 +80,6 @@ typedef struct {
 
 typedef enum {
     EVENT_KEYBOARD = 0,
-    EVENT_MOUSE,
     EVENT_GAMEPAD,
     EVENT_DEVICES,  // A device came or went; carries what is plugged in now
 } event_type_t;
@@ -92,12 +92,6 @@ typedef struct {
             uint8_t modifier;
             uint8_t keys[HID_KEYBOARD_KEY_MAX];
         } keyboard;
-        struct {
-            int16_t dx;
-            int16_t dy;
-            int8_t  wheel;
-            uint8_t buttons;
-        } mouse;
         struct {
             uint8_t buttons;  // tic80_gamepad bits
         } gamepad;
@@ -121,15 +115,21 @@ static bool          started      = false;
 // two interfaces reports the same key on one and nothing on the other, and
 // shared state would see that as the key being pressed over and over.
 static bool key_state[MAX_DEVICES][tic_keys_count];
-static int32_t pending_dx     = 0;
-static int32_t pending_dy     = 0;
-static int32_t pending_scroll = 0;
-static int32_t leftover_dx    = 0;  // The half pixels MOUSE_DIVISOR leaves behind
-static int32_t leftover_dy    = 0;
-static bool    mouse_left     = false;
-static bool    mouse_middle   = false;
-static bool    mouse_right    = false;
-static uint8_t gamepad_state  = 0;
+static uint8_t gamepad_state = 0;
+
+// A mouse does not go through the event queue. A gaming mouse reports at a
+// kilohertz and the queue is drained once a frame, so a report per movement
+// would both throw motion away when the queue filled and crowd the keyboard's
+// events out of it. Movement adds up here instead and the main loop takes the
+// total, which is what it wanted of the reports anyway.
+static portMUX_TYPE mouse_lock    = portMUX_INITIALIZER_UNLOCKED;
+static int32_t      mouse_dx      = 0;
+static int32_t      mouse_dy      = 0;
+static int32_t      mouse_scroll  = 0;
+static uint8_t      mouse_buttons = 0;
+
+static int32_t leftover_dx = 0;  // The half pixels MOUSE_DIVISOR leaves behind
+static int32_t leftover_dy = 0;
 static bool    have_keyboard  = false;
 static bool    have_mouse     = false;
 static bool    have_gamepad   = false;
@@ -250,6 +250,17 @@ static void post_device_list(void) {
     post(&event);
 }
 
+// On the HID driver task. The buttons are a state, so the newest report wins;
+// the movement is a change, so every report counts and none may be dropped.
+static void accumulate_mouse(int32_t dx, int32_t dy, int32_t wheel, uint8_t buttons) {
+    portENTER_CRITICAL(&mouse_lock);
+    mouse_dx      += dx;
+    mouse_dy      += dy;
+    mouse_scroll  += wheel;
+    mouse_buttons  = buttons;
+    portEXIT_CRITICAL(&mouse_lock);
+}
+
 static void decode_keyboard(uint8_t slot, const uint8_t* data, size_t length) {
     if (length < sizeof(hid_keyboard_input_report_boot_t)) {
         return;
@@ -270,11 +281,7 @@ static void decode_mouse_boot(const uint8_t* data, size_t length) {
 
     const hid_mouse_input_report_boot_t* report = (const hid_mouse_input_report_boot_t*)data;
 
-    event_t event = {.type = EVENT_MOUSE};
-    event.mouse.dx      = report->x_displacement;
-    event.mouse.dy      = report->y_displacement;
-    event.mouse.buttons = report->buttons.val & 0x07;
-    post(&event);
+    accumulate_mouse(report->x_displacement, report->y_displacement, 0, report->buttons.val & 0x07);
 }
 
 static void decode_mouse(const device_t* device, const uint8_t* data, int length) {
@@ -284,18 +291,18 @@ static void decode_mouse(const device_t* device, const uint8_t* data, int length
         return;  // A report for some other part of the device, a battery level say
     }
 
-    event_t event = {.type = EVENT_MOUSE};
-    event.mouse.dx    = (int16_t)hid_layout_read(body, left, &device->layout.x);
-    event.mouse.dy    = (int16_t)hid_layout_read(body, left, &device->layout.y);
-    event.mouse.wheel = (int8_t)hid_layout_read(body, left, &device->layout.wheel);
+    int32_t dx    = hid_layout_read(body, left, &device->layout.x);
+    int32_t dy    = hid_layout_read(body, left, &device->layout.y);
+    int32_t wheel = hid_layout_read(body, left, &device->layout.wheel);
 
+    uint8_t buttons = 0;
     for (uint16_t button = 0; button < device->layout.button_count && button < 3; button++) {
         if (hid_layout_read_button(body, left, &device->layout, button)) {
-            event.mouse.buttons |= (uint8_t)(1u << button);
+            buttons |= (uint8_t)(1u << button);
         }
     }
 
-    post(&event);
+    accumulate_mouse(dx, dy, wheel, buttons);
 }
 
 static void decode_gamepad(const device_t* device, const uint8_t* data, int length) {
@@ -605,15 +612,6 @@ void tanmatsu_usb_hid_poll(tanmatsu_usb_hid_state_t* out) {
                 }
                 break;
 
-            case EVENT_MOUSE:
-                pending_dx     += event.mouse.dx;
-                pending_dy     += event.mouse.dy;
-                pending_scroll += event.mouse.wheel;
-                mouse_left      = (event.mouse.buttons & (1u << 0)) != 0;
-                mouse_right     = (event.mouse.buttons & (1u << 1)) != 0;
-                mouse_middle    = (event.mouse.buttons & (1u << 2)) != 0;
-                break;
-
             case EVENT_GAMEPAD:
                 gamepad_state = event.gamepad.buttons;
                 break;
@@ -628,7 +626,9 @@ void tanmatsu_usb_hid_poll(tanmatsu_usb_hid_state_t* out) {
                     }
                 }
                 if (!have_mouse) {
-                    mouse_left = mouse_middle = mouse_right = false;
+                    portENTER_CRITICAL(&mouse_lock);
+                    mouse_buttons = 0;
+                    portEXIT_CRITICAL(&mouse_lock);
                 }
                 if (!have_gamepad) {
                     gamepad_state = 0;
@@ -650,23 +650,30 @@ void tanmatsu_usb_hid_poll(tanmatsu_usb_hid_state_t* out) {
     out->mouse    = have_mouse;
     out->gamepad  = have_gamepad;
 
+    portENTER_CRITICAL(&mouse_lock);
+    int32_t dx      = mouse_dx;
+    int32_t dy      = mouse_dy;
+    int32_t scroll  = mouse_scroll;
+    uint8_t buttons = mouse_buttons;
+    mouse_dx        = 0;
+    mouse_dy        = 0;
+    mouse_scroll    = 0;
+    portEXIT_CRITICAL(&mouse_lock);
+
     // Divide with the remainder carried over, so slow movement still gets
     // there rather than being rounded away one report at a time.
-    int32_t dx  = pending_dx + leftover_dx;
-    int32_t dy  = pending_dy + leftover_dy;
+    dx += leftover_dx;
+    dy += leftover_dy;
     out->mouse_dx = dx / MOUSE_DIVISOR;
     out->mouse_dy = dy / MOUSE_DIVISOR;
     leftover_dx   = dx - out->mouse_dx * MOUSE_DIVISOR;
     leftover_dy   = dy - out->mouse_dy * MOUSE_DIVISOR;
-    pending_dx    = 0;
-    pending_dy    = 0;
 
-    out->mouse_scroll = pending_scroll;
-    pending_scroll    = 0;
+    out->mouse_scroll = scroll;
 
-    out->mouse_left   = mouse_left;
-    out->mouse_middle = mouse_middle;
-    out->mouse_right  = mouse_right;
+    out->mouse_left   = (buttons & (1u << 0)) != 0;
+    out->mouse_right  = (buttons & (1u << 1)) != 0;
+    out->mouse_middle = (buttons & (1u << 2)) != 0;
 
     out->gamepad_buttons = gamepad_state;
 }
