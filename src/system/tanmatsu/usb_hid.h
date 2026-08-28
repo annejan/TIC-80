@@ -32,6 +32,9 @@
 #include "esp_err.h"
 #include "tic.h"
 
+// TIC-80 plays four, and the port has room for no more devices than that.
+#define TANMATSU_USB_HID_MAX_GAMEPADS 4
+
 // What the plugged-in devices have reported since the last poll. Movement and
 // scrolling are deltas; everything else is the state as it stands.
 typedef struct {
@@ -48,15 +51,19 @@ typedef struct {
     bool    mouse_middle;
     bool    mouse_right;
 
-    // The tic80_gamepad bits: up, down, left, right, a, b, x, y.
-    uint8_t gamepad_buttons;
+    // The tic80_gamepad bits - up, down, left, right, a, b, x, y - one entry
+    // per pad, in the order they were plugged in. A pad keeps its player for
+    // as long as it stays plugged in, so unplugging the first one does not
+    // shuffle the rest along.
+    uint8_t gamepad_buttons[TANMATSU_USB_HID_MAX_GAMEPADS];
 } tanmatsu_usb_hid_state_t;
 
 // Powers the USB port and starts the host stack. Failing is not fatal: the
 // built-in keyboard keeps working, so this only logs and returns the error.
 esp_err_t tanmatsu_usb_hid_init(void);
 
-// Cuts power to the port again, on the way out.
+// Stops the host stack and cuts power to the port again, on the way out. Safe
+// to call on a failed or partial init, which is what the error paths do.
 void tanmatsu_usb_hid_deinit(void);
 
 // Folds everything the devices reported since the last call into *out.
