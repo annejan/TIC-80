@@ -415,7 +415,10 @@ void tanmatsu_input_poll(tic80_input* input) {
     input->mouse.scrolly  = pointer_scroll + usb.mouse_scroll;
     input->mouse.relative = 0;
 
-    input->gamepads.first.data = usb.gamepad_buttons;
+    input->gamepads.first.data  = usb.gamepad_buttons[0];
+    input->gamepads.second.data = usb.gamepad_buttons[1];
+    input->gamepads.third.data  = usb.gamepad_buttons[2];
+    input->gamepads.fourth.data = usb.gamepad_buttons[3];
 }
 
 bool tanmatsu_input_text(char* out) {
