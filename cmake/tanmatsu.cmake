@@ -19,6 +19,7 @@ set(TIC80_BACKEND ${TIC80_SRC}/system/tanmatsu)
 # TIC-80 core
 set(TIC80_TANMATSU_CORE_SRCS
     ${TIC80_SRC}/fftdata.c
+    ${TIC80_SRC}/vqtdata.c
     ${TIC80_SRC}/core/core.c
     ${TIC80_SRC}/core/draw.c
     ${TIC80_SRC}/core/io.c
@@ -30,6 +31,8 @@ set(TIC80_TANMATSU_CORE_SRCS
     ${TIC80_SRC}/tilesheet.c
     ${TIC80_SRC}/script.c
     ${TIC80_SRC}/ext/fft.c
+    ${TIC80_SRC}/ext/vqt.c
+    ${TIC80_SRC}/ext/vqt_kernel.c
     ${TIC80_SRC}/ext/kiss_fft.c
     ${TIC80_SRC}/ext/kiss_fftr.c
     ${TIC80_SRC}/ext/png.c
@@ -54,6 +57,8 @@ set(TIC80_TANMATSU_STUDIO_SRCS
     ${TIC80_SRC}/studio/editors/sfx.c
     ${TIC80_SRC}/studio/editors/music.c
     ${TIC80_SRC}/studio/studio.c
+    ${TIC80_SRC}/studio/toolbar.c
+    ${TIC80_SRC}/studio/rom.c
     ${TIC80_SRC}/studio/config.c
     ${TIC80_SRC}/studio/fs.c
     ${TIC80_SRC}/ext/history.c
@@ -210,6 +215,8 @@ function(tic80_tanmatsu_generate_headers OUTPUT_DIR)
     set(TIC_RT_WASM "unknown")
     set(TIC_RT_JANET "unknown")
     set(TIC_RT_PYTHON "unknown")
+    set(TIC_RT_MINISCRIPT "unknown")
+    set(TIC_RT_FORTH "unknown")
 
     if(EXISTS "${TIC80_ROOT}/vendor/lua/lua.h")
         file(STRINGS "${TIC80_ROOT}/vendor/lua/lua.h" LUA_MAJOR_LINE REGEX "^#define LUA_VERSION_MAJOR[ \t]+\"[^\"]+\"")

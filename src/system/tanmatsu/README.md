@@ -195,6 +195,13 @@ stored network, gets a lease, and TIC-80 keeps running at 60 fps throughout,
 with failures staying failures rather than hangs. Actually fetching from
 tic80.com is still unproven; the network it was tried on refused the connection.
 
+Which site it talks to follows the build, as it does upstream: a build whose
+checkout sits exactly on a `vX.Y.Z` tag is a release and talks to tic80.com,
+and anything else is a dev snapshot and talks to dev.tic80.com (`TIC_HOST` in
+`src/studio/system.h`, set from `cmake/version.cmake`). The pinned root in
+`certs/` was only checked against tic80.com, so on a dev build a handshake
+failing with -0x3000 points there first.
+
 ## What is not here
 
 - **Lua only.** The other TIC-80 languages are left out to keep the binary and
