@@ -33,20 +33,33 @@ endif()
 
 set(BUILD_PLAYER_DEFAULT OFF)
 set(BUILD_LIBRETRO_DEFAULT OFF)
-if(ANDROID OR NINTENDO_SWITCH)
-    set(BUILD_TOUCH_INPUT_DEFAULT ON)
-else()
-    set(BUILD_TOUCH_INPUT_DEFAULT OFF)
-endif()
+# Touch input is off unless a build asks for it: the platforms with a screen
+# to touch — Android, the Switch, the browser a phone opens the player in —
+# pass -DBUILD_TOUCH_INPUT=ON themselves, and a build that does not is a build
+# without the controls, their layout and their textures.
+set(BUILD_TOUCH_INPUT_DEFAULT OFF)
 set(BUILD_WITH_ALL_DEFAULT OFF)
 
 option(BUILD_STATIC "Static runtime" ${BUILD_STATIC_DEFAULT})
 option(BUILD_WITH_ALL "Build all supported scripts" ${BUILD_WITH_ALL_DEFAULT})
+option(BUILD_APPLE "Apple Native Backend Enabled" OFF)
+option(BUILD_RENDER_CACHE "Build with render cache optimization" OFF)
+if(BUILD_RENDER_CACHE)
+    add_definitions(-DBUILD_RENDER_CACHE)
+endif()
 option(BUILD_SDL "SDL Enabled" ON)
+option(BUILD_SOKOL "Sokol Enabled" OFF)
+if(BUILD_APPLE)
+    set(BUILD_SDL OFF)
+endif()
+if(BUILD_SDL AND BUILD_SOKOL)
+    message(FATAL_ERROR "BUILD_SDL and BUILD_SOKOL are two system layers: enable exactly one")
+endif()
 option(BUILD_SDLGPU "SDL GPU Enabled" OFF)
 option(BUILD_LIBRETRO "libretro Enabled" ${BUILD_LIBRETRO_DEFAULT})
 option(BUILD_TOOLS "bin2txt prj2cart" OFF)
 option(BUILD_EDITORS "Build cart editors" ON)
+option(BUILD_SURF "Build the SURF game browser" ON)
 option(BUILD_PRO "Build PRO version" FALSE)
 option(BUILD_PLAYER "Build standalone players" ${BUILD_PLAYER_DEFAULT})
 option(BUILD_TOUCH_INPUT "Build with touch input support" ${BUILD_TOUCH_INPUT_DEFAULT})
@@ -56,9 +69,8 @@ option(BUILD_WITH_ZLIB "Build with zlib linked" ON)
 option(TIC80_TARGET "Target binary suffix")
 option(PREFER_SYSTEM_LIBRARIES "Prefer link with system libraries" OFF)
 
-if(BUILD_EDITORS)
-    set(BUILD_SURF ON)
-endif()
+# The browser is part of the default build; the builds that should not carry
+# one — the export stubs, the GLES2 player — pass -DBUILD_SURF=OFF.
 
 if(NOT TIC80_TARGET)
     set(TIC80_TARGET tic80)
@@ -70,9 +82,16 @@ endif()
 
 if(NINTENDO_SWITCH AND NOT LIBRETRO_STATIC)
     set(PREFER_SYSTEM_LIBRARIES ON)
+    if(NOT TIC_DATA_PATH)
+        set(TIC_DATA_PATH "/switch/tic80")
+    endif()
 endif()
 
 add_library(runtime INTERFACE)
+
+if(TIC_DATA_PATH)
+    target_compile_definitions(runtime INTERFACE TIC_DATA_PATH="${TIC_DATA_PATH}")
+endif()
 
 if(BUILD_STATIC)
     set(TIC_RUNTIME STATIC)
@@ -104,6 +123,10 @@ if(UNIX AND NOT APPLE AND NOT EMSCRIPTEN AND NOT ANDROID)
         set(FREEBSD TRUE)
     endif()
 endif()
+
+option(PREFER_SYSTEM_SDL2 "Prefer system SDL2" ${PREFER_SYSTEM_LIBRARIES})
+option(USE_GLES2 "Use GLES2" OFF)
+option(USE_EGL "Use EGL" OFF)
 
 if (BUILD_NO_OPTIMIZATION)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0")
@@ -165,7 +188,6 @@ include(cmake/blipbuf.cmake)
 include(cmake/zlib.cmake)
 include(cmake/zip.cmake)
 include(cmake/png.cmake)
-include(cmake/tools.cmake)
 
 include(cmake/lua.cmake)
 include(cmake/moon.cmake)
@@ -179,6 +201,11 @@ include(cmake/squirrel.cmake)
 include(cmake/pocketpy.cmake)
 include(cmake/quickjs.cmake)
 include(cmake/janet.cmake)
+include(cmake/forth.cmake)
+include(cmake/miniscript.cmake)
+
+# After the languages: the tools check what those options came out as.
+include(cmake/tools.cmake)
 
 include(cmake/core.cmake)
 include(cmake/wave.cmake)
@@ -186,7 +213,12 @@ include(cmake/argparse.cmake)
 include(cmake/naett.cmake)
 include(cmake/studio.cmake)
 
+# After the core and the languages: the tests link what those came out as.
+include(cmake/tests.cmake)
+
 include(cmake/sdl.cmake)
+include(cmake/sokol.cmake)
+include(cmake/apple.cmake)
 include(cmake/libretro.cmake)
 include(cmake/n3ds.cmake)
 include(cmake/nswitch.cmake)

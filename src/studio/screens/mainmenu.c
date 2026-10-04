@@ -23,6 +23,7 @@
 #include "studio/studio.h"
 #include "studio/config.h"
 #include "studio/screens/menu.h"
+#include "tic_assert.h"
 #include "mainmenu.h"
 
 typedef struct
@@ -129,6 +130,28 @@ static MenuOption IntegerScaleOption =
     optionIntegerScaleSet,
 };
 
+#if defined(BUILD_RENDER_CACHE)
+static s32 optionDrawCacheGet(void* data)
+{
+    StudioMainMenu* main = data;
+    return main->options->drawCache ? 1 : 0;
+}
+
+static void optionDrawCacheSet(void* data, s32 pos)
+{
+    StudioMainMenu* main = data;
+    main->options->drawCache = (pos == 1);
+    tic_core_draw_cache_set_enabled(main->tic, main->options->drawCache);
+}
+
+static MenuOption DrawCacheOption =
+{
+    OPTION_VALUES({OffValue, OnValue}),
+    optionDrawCacheGet,
+    optionDrawCacheSet,
+};
+#endif
+
 #if defined(CRT_SHADER_SUPPORT)
 static s32 optionCrtMonitorGet(void* data)
 {
@@ -151,6 +174,10 @@ static MenuOption CrtMonitorOption =
 
 #endif
 
+// A layer that makes its window before the studio reads its config can never
+// honor this: sokol's cannot, so it runs at the display's rate and the menu
+// does not offer what it cannot do.
+#if !defined(VSYNC_ALWAYS_ON)
 static s32 optionVSyncGet(void* data)
 {
     StudioMainMenu* main = data;
@@ -169,6 +196,7 @@ static MenuOption VSyncOption =
     optionVSyncGet,
     optionVSyncSet,
 };
+#endif
 
 static s32 optionVolumeGet(void* data)
 {
@@ -195,6 +223,10 @@ static MenuOption VolumeOption =
     optionVolumeSet,
 };
 
+// Autosave belongs to the full client: it decides whether a cart SURF loaded
+// from the web is written to disk (surf.c), and the editors-less export stubs
+// are the builds without either, so the row toggled a setting nothing read.
+#if defined(BUILD_EDITORS)
 static s32 optionAutoSaveGet(void* data)
 {
     StudioMainMenu* main = data;
@@ -213,6 +245,7 @@ static MenuOption AutoSaveOption =
     optionAutoSaveGet,
     optionAutoSaveSet,
 };
+#endif
 
 #if defined(BUILD_EDITORS)
 static s32 optionTabSizeGet(void* data)
@@ -304,11 +337,17 @@ enum
 #if defined(CRT_SHADER_SUPPORT)
     OptionsMenu_CrtMonitorOption,
 #endif
+#if !defined(VSYNC_ALWAYS_ON)
     OptionsMenu_VSyncOption,
+#endif
     OptionsMenu_FullscreenOption,
     OptionsMenu_IntegerScaleOption,
+#if defined(BUILD_RENDER_CACHE)
+    OptionsMenu_DrawCacheOption,
+#endif
     OptionsMenu_VolumeOption,
 #if defined(BUILD_EDITORS)
+    OptionsMenu_AutoSaveOption,
     OptionsMenu_Editor,
 #endif
     OptionsMenu_Gamepad,
@@ -321,18 +360,29 @@ static const MenuItem OptionMenu[] =
 #if defined(CRT_SHADER_SUPPORT)
     {"CRT MONITOR",     NULL,   &CrtMonitorOption},
 #endif
+#if !defined(VSYNC_ALWAYS_ON)
     {"VSYNC",           NULL,   &VSyncOption, "VSYNC needs restart!"},
+#endif
     {"FULLSCREEN",      NULL,   &FullscreenOption},
     {"INTEGER SCALE",   NULL,   &IntegerScaleOption},
+#if defined(BUILD_RENDER_CACHE)
+    {"DRAW CACHE",      NULL,   &DrawCacheOption, "Cache draw calls for CPU saving"},
+#endif
     {"VOLUME",          NULL,   &VolumeOption},
-    {"AUTOSAVE",        NULL,   &AutoSaveOption, "Keep carts loaded from the web"},
 #if defined(BUILD_EDITORS)
+    {"AUTOSAVE",        NULL,   &AutoSaveOption, "Keep carts loaded from the web"},
     {"EDITOR OPTIONS", showEditorMenu},
 #endif
     {"SETUP GAMEPAD",       showGamepadMenu},
     {""},
     {"BACK",            onBackFromOptionsMenu, .back = true},
 };
+
+// The menu cursor is an index into the table — a submenu returns to
+// OptionsMenu_<row> (menu.c backDone) — so an entry added to one and not to
+// the other silently points every later row one off. The autosave row did
+// exactly that; the assert is what catches the next one.
+static_assert(COUNT_OF(OptionMenu) == OptionsMenu_Back + 1, "OptionMenuCount");
 
 static void showOptionsMenu(void* data, s32 pos);
 static void gameMenuHandler(void* data, s32 pos)
@@ -347,6 +397,8 @@ static void gameMenuHandler(void* data, s32 pos)
 
 enum
 {
+    EditorMenu_TabSize,
+    EditorMenu_TabMode,
     EditorMenu_KeybindMode,
     EditorMenu_Separator,
     EditorMenu_Back,
@@ -360,6 +412,8 @@ static const MenuItem EditorMenu[] =
     {""},
     {"BACK",            showOptionsMenu, .back = true},
 };
+
+static_assert(COUNT_OF(EditorMenu) == EditorMenu_Back + 1, "EditorMenuCount");
 
 static void showEditorMenu(void* data, s32 pos)
 {
@@ -434,12 +488,11 @@ static void showGameMenu(void* data, s32 pos)
 
 static inline s32 mainMenuOffset(StudioMainMenu* menu)
 {
-    if (menu->count > 0) return 0;
-
-    if (!studio_is_cart_loaded(menu->studio))
-        return 3;
-
-    return 1;
+    // Only the game menu of the loaded cart can be missing, so the entry
+    // point is the item right after it. Skipping further (#2889) hid RESUME
+    // GAME and RESET GAME whenever no cart was loaded, which put a lone
+    // CLOSE GAME on top of the menu.
+    return menu->count ? 0 : 1;
 }
 
 static void onBackFromOptionsMenu(void* data, s32 pos)
@@ -457,6 +510,21 @@ static void onResumeGame(void* data, s32 pos)
     resumeGame(main->studio);
 }
 
+// The back of the top level menu (ESC or the gamepad's B): the menu sits over
+// a paused run and belongs to whoever started it — a player's run resumes
+// under it, while a dev run, and a menu opened in the studio, step out to the
+// editor. The same step ESC takes in RUN mode, so a run of a cart with a game
+// menu is left with ESC ESC instead of a walk to CLOSE GAME (#2937).
+static void onMenuBack(void* data, s32 pos)
+{
+    StudioMainMenu* main = data;
+
+    if(studio_menu_over_player_run(main->studio))
+        onResumeGame(data, pos);
+    else
+        leaveRun(main->studio);
+}
+
 static void onResetGame(void* data, s32 pos)
 {
     StudioMainMenu* main = data;
@@ -470,28 +538,21 @@ static void onExitStudio(void* data, s32 pos)
     exitStudio(main->studio);
 }
 
+#if defined(BUILD_EDITORS) || defined(BUILD_SURF)
 static void onExitGame(void* data, s32 pos)
 {
     StudioMainMenu* main = data;
     exitGame(main->studio);
 }
-
-static void onSurf(void* data, s32 pos)
-{
-    StudioMainMenu* main = data;
-    setStudioMode(main->studio, TIC_SURF_MODE);
-}
+#endif
 
 enum MainMenu
 {
     MainMenu_GameMenu,
     MainMenu_ResumeGame,
     MainMenu_ResetGame,
-#if defined(BUILD_EDITORS)
+#if defined(BUILD_EDITORS) || defined(BUILD_SURF)
     MainMenu_CloseGame,
-#endif
-#if defined(BUILD_SURF)
-    MainMenu_Surf,
 #endif
     MainMenu_Options,
     MainMenu_Separator,
@@ -505,14 +566,15 @@ static const MenuItem MainMenu[] =
     {"RESET GAME",  onResetGame},
 #if defined(BUILD_EDITORS)
     {"CLOSE GAME",  onExitGame, NULL, "Press F1 to switch to editor"},
-#endif
-#if defined(BUILD_SURF)
-    {"SURF",        onSurf},
+#elif defined(BUILD_SURF)
+    {"CLOSE GAME",  onExitGame},
 #endif
     {"OPTIONS",     showOptionsMenu},
     {""},
     {"QUIT TIC-80", onExitStudio},
 };
+
+static_assert(COUNT_OF(MainMenu) == MainMenu_Quit + 1, "MainMenuCount");
 
 static void showMainMenu(void* data, s32 pos)
 {
@@ -520,7 +582,7 @@ static void showMainMenu(void* data, s32 pos)
     initGameMenu(main);
 
     s32 offset = mainMenuOffset(main);
-    studio_menu_init(main->menu, MainMenu + offset, COUNT_OF(MainMenu) - offset, 0, 0, studio_is_cart_loaded(main->studio) ? onResumeGame : NULL, main);
+    studio_menu_init(main->menu, MainMenu + offset, COUNT_OF(MainMenu) - offset, 0, 0, studio_is_cart_loaded(main->studio) ? onMenuBack : NULL, main);
 }
 
 static void showOptionsMenuPos(void* data, s32 pos)
@@ -671,6 +733,8 @@ static void initGamepadMenu(StudioMainMenu* main)
         {"RESET TO DEFAULTS",   resetGamepadMenu},
         {"BACK",                showOptionsMenu, .back = true},
     };
+
+    static_assert(COUNT_OF(GamepadMenu) == GamepadMenu_Back + 1, "GamepadMenuCount");
 
     initGamepadButtons(main);
 

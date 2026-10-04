@@ -34,8 +34,32 @@
 #include "defines.h"
 #include "tools.h"
 #include "system.h"
+#include "rom.h"
 #include "anim.h"
 #include "ext/png.h"
+#include "core/core.h"
+
+#if defined(BUILD_RENDER_CACHE)
+// Redirect studio drawing calls through the core API pointers to benefit from the draw cache
+#define tic_api_cls(tic, ...) (((tic_core*)(tic))->api.cls(tic, __VA_ARGS__))
+#define tic_api_clip(tic, ...) (((tic_core*)(tic))->api.clip(tic, __VA_ARGS__))
+#define tic_api_print(tic, ...) (((tic_core*)(tic))->api.print(tic, __VA_ARGS__))
+#define tic_api_font(tic, ...) (((tic_core*)(tic))->api.font(tic, __VA_ARGS__))
+#define tic_api_pix(tic, ...) (((tic_core*)(tic))->api.pix(tic, __VA_ARGS__))
+#define tic_api_rect(tic, ...) (((tic_core*)(tic))->api.rect(tic, __VA_ARGS__))
+#define tic_api_rectb(tic, ...) (((tic_core*)(tic))->api.rectb(tic, __VA_ARGS__))
+#define tic_api_line(tic, ...) (((tic_core*)(tic))->api.line(tic, __VA_ARGS__))
+#define tic_api_circ(tic, ...) (((tic_core*)(tic))->api.circ(tic, __VA_ARGS__))
+#define tic_api_circb(tic, ...) (((tic_core*)(tic))->api.circb(tic, __VA_ARGS__))
+#define tic_api_elli(tic, ...) (((tic_core*)(tic))->api.elli(tic, __VA_ARGS__))
+#define tic_api_ellib(tic, ...) (((tic_core*)(tic))->api.ellib(tic, __VA_ARGS__))
+#define tic_api_paint(tic, ...) (((tic_core*)(tic))->api.paint(tic, __VA_ARGS__))
+#define tic_api_tri(tic, ...) (((tic_core*)(tic))->api.tri(tic, __VA_ARGS__))
+#define tic_api_trib(tic, ...) (((tic_core*)(tic))->api.trib(tic, __VA_ARGS__))
+#define tic_api_ttri(tic, ...) (((tic_core*)(tic))->api.ttri(tic, __VA_ARGS__))
+#define tic_api_spr(tic, ...) (((tic_core*)(tic))->api.spr(tic, __VA_ARGS__))
+#define tic_api_map(tic, ...) (((tic_core*)(tic))->api.map(tic, __VA_ARGS__))
+#endif
 
 #define KEYBOARD_HOLD 20
 #define KEYBOARD_PERIOD 3
@@ -129,10 +153,33 @@ typedef enum
     TIC_SFX_MODE,
     TIC_MUSIC_MODE,
     TIC_MENU_MODE,
+#if defined(BUILD_SURF)
     TIC_SURF_MODE,
+#endif
 
     TIC_MODES_COUNT
 } EditorMode;
+
+// Where a build goes when there is nothing else to show, and where leaving a
+// run or the browser goes: the console, the browser, or the menu.
+#if defined(BUILD_EDITORS)
+#define TIC_HOME_MODE TIC_CONSOLE_MODE
+#elif defined(BUILD_SURF)
+#define TIC_HOME_MODE TIC_SURF_MODE
+#else
+#define TIC_HOME_MODE TIC_MENU_MODE
+#endif
+
+// Who asked for the run decides what ESC does in it (#2937): the studio's own
+// runs — Ctrl+R, the console's `run` — step back out to the editor, a cart
+// opened to play — a file argument, a dropped file, SURF, the web player —
+// gets the pause menu. What the cart declares (a `menu:` tag) is content, not
+// a role: it adds the game's own items to that menu, nothing more.
+typedef enum
+{
+    RUN_FROM_STUDIO,
+    RUN_FROM_PLAYER,
+} RunOrigin;
 
 typedef enum
 {
@@ -212,7 +259,6 @@ bool checkMouseClick(Studio* studio, const tic_rect* rect, tic_mouse_btn button)
 bool checkMouseDblClick(Studio* studio, const tic_rect* rect, tic_mouse_btn button);
 bool checkMouseDown(Studio* studio, const tic_rect* rect, tic_mouse_btn button);
 
-void drawToolbar(Studio* studio, tic_mem* tic, bool bg);
 void drawBitIcon(Studio* studio, s32 id, s32 x, s32 y, u8 color);
 
 tic_cartridge* loadPngCart(png_buffer buffer);
@@ -231,6 +277,18 @@ bool checkStudioViMode(Studio* studio, ViMode mode);
 void toClipboard(const void* data, s32 size, bool flip);
 bool fromClipboard(void* data, s32 size, bool flip, bool remove_white_spaces, bool sameSize);
 
+// The five operations the toolbar's clipboard buttons perform. Each editor
+// supplies its own; a mode with none leaves it NULL.
+typedef struct
+{
+    void (*cut)(void*);
+    void (*copy)(void*);
+    void (*paste)(void*);
+    void (*undo)(void*);
+    void (*redo)(void*);
+
+} ClipboardOps;
+
 typedef enum
 {
     TIC_CLIPBOARD_NONE,
@@ -241,16 +299,6 @@ typedef enum
 
 ClipboardEvent getClipboardEvent(Studio* studio);
 
-typedef enum
-{
-    TIC_TOOLBAR_CUT,
-    TIC_TOOLBAR_COPY,
-    TIC_TOOLBAR_PASTE,
-    TIC_TOOLBAR_UNDO,
-    TIC_TOOLBAR_REDO,
-} StudioEvent;
-
-void setStudioEvent(Studio* studio, StudioEvent event);
 void showTooltip(Studio* studio, const char* text);
 
 void setSpritePixel(tic_tile* tiles, s32 x, s32 y, u8 color);
@@ -264,14 +312,22 @@ bool studioCartChanged(Studio* studio);
 void playSystemSfx(Studio* studio, s32 id);
 bool studio_is_cart_loaded(Studio* studio);
 
+struct tic_fs* studio_fs(Studio* studio);
+
 void gotoMenu(Studio* studio);
 void gotoCode(Studio* studio);
+#if defined(BUILD_SURF)
 void gotoSurf(Studio* studio);
+void exitSurf(Studio* studio);
+#endif
 
-void runGame(Studio* studio);
+void runGame(Studio* studio, RunOrigin origin);
 void exitGame(Studio* studio);
 void resumeGame(Studio* studio);
 void saveProject(Studio* studio);
+
+bool studio_menu_over_player_run(Studio* studio);
+void leaveRun(Studio* studio);
 
 tic_tiles* getBankTiles(Studio* studio);
 tic_palette* getBankPalette(Studio* studio, bool bank);

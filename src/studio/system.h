@@ -36,7 +36,14 @@
 #define TIC_NAME "TIC-80"
 #define TIC_NAME_FULL TIC_NAME " tiny computer"
 #define TIC_TITLE TIC_NAME_FULL " " TIC_VERSION
-#define TIC_HOST "tic80.com"
+// A dev snapshot talks to the dev site — it runs the same code from the
+// same branch, its data is disposable, and testing there cannot touch the
+// real catalogue. A release talks to production.
+#if TIC_VERSION_IS_RELEASE
+    #define TIC_HOST "tic80.com"
+#else
+    #define TIC_HOST "dev.tic80.com"
+#endif
 #if defined(__TIC_WIN7__)
     #define TIC_WEBSITE_PROTOCOL "http://"
 #else
@@ -135,6 +142,9 @@ typedef struct
         bool fullscreen;
         bool vsync;
         bool integerScale;
+#if defined(BUILD_RENDER_CACHE)
+        bool drawCache;
+#endif
         s32 volume;
         bool autosave;
         tic_mapping mapping;
@@ -171,6 +181,9 @@ void studio_delete(Studio* studio);
 const StudioConfig* studio_config(Studio* studio);
 
 Studio* studio_create(s32 argc, char **argv, s32 samplerate, tic80_pixel_color_format format, const char* appFolder, s32 maxscale, tic_layout keyboardLayout);
+#if defined(BUILD_RENDER_CACHE)
+bool studio_is_dirty(Studio* studio);
+#endif
 
 #ifdef __cplusplus
 }

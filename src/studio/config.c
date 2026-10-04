@@ -31,11 +31,12 @@
 #define DEFAULT_VSYNC 1
 #endif
 
-#if defined(__TIC_ANDROID__)
+// Integer scale leaves black borders around the picture wherever the window
+// is not a whole multiple of it, and the picture is what the machine is for:
+// off by default everywhere. The web export page used to force it off by
+// writing options.json (and, being IDBFS, wrote it into a file every TIC-80
+// page on the origin shares); the default does the job instead.
 #define INTEGER_SCALE_DEFAULT false
-#else
-#define INTEGER_SCALE_DEFAULT true
-#endif
 
 static void readConfig(Config* config)
 {
@@ -88,12 +89,17 @@ static void setDefault(Config* config)
         .options =
         {
 #if defined(CRT_SHADER_SUPPORT)
-            .crt            = false,
+            // The effect is half the point of the machine on a big screen:
+            // on unless a player turns it off.
+            .crt            = true,
 #endif
             .volume         = MAX_VOLUME,
             .vsync          = DEFAULT_VSYNC,
             .fullscreen     = false,
             .integerScale   = INTEGER_SCALE_DEFAULT,
+#if defined(BUILD_RENDER_CACHE)
+            .drawCache      = true,
+#endif
             .autosave       = false,
 #if defined(BUILD_EDITORS)
             .keybindMode    = KEYBIND_STANDARD,
@@ -149,7 +155,11 @@ static void saveConfigCart(Config* config)
     studioConfigChanged(config->studio);
 }
 
-static const char OptionsJsonPath[] = TIC_LOCAL "options.json";
+// The options live next to the config of this build, not in the shared
+// .local: the path used to carry no version, so every TIC-80 build in the
+// same storage — the web player on itch, where all games share one origin —
+// read and overwrote the same options.json, keys and all.
+static const char OptionsJsonPath[] = TIC_LOCAL_VERSION "options.json";
 
 typedef struct
 {
@@ -170,23 +180,62 @@ static void loadOptions(Config* config)
         {
             struct StudioOptions* options = &config->data.options;
 
+            // Every key this file does not carry keeps the value the player
+            // already has — the one from the config above, or the default.
+            // A reader answers zero/false when the key is not there, so each
+            // key is asked for first: reading a missing "volume" as 0 turned a
+            // file without it into a muted player, and leaving the options
+            // screen saved that zero back, so the silence was permanent. The
+            // second argument of a reader is the token its scan starts at, not
+            // a value to fall back to — passing the current volume there
+            // walked the scan past its own key and read the zero anyway.
 #if defined(CRT_SHADER_SUPPORT)
-            options->crt = json_bool("crt", 0);
+            if (json_has("crt", 0))
+                options->crt = json_bool("crt", 0);
 #endif
-            options->fullscreen = json_bool("fullscreen", 0);
-            options->vsync = json_bool("vsync", 0);
-            options->integerScale = json_bool("integerScale", 0);
-            options->volume = json_int("volume", 0);
-            options->autosave = json_bool("autosave", 0);
+            if (json_has("fullscreen", 0))
+                options->fullscreen = json_bool("fullscreen", 0);
 
+            if (json_has("vsync", 0))
+                options->vsync = json_bool("vsync", 0);
+
+            if (json_has("integerScale", 0))
+                options->integerScale = json_bool("integerScale", 0);
+
+#if defined(BUILD_RENDER_CACHE)
+            if (json_has("drawCache", 0))
+                options->drawCache = json_bool("drawCache", 0);
+#endif
+
+            if (json_has("volume", 0))
+                options->volume = json_int("volume", 0);
+
+            if (json_has("autosave", 0))
+                options->autosave = json_bool("autosave", 0);
+
+            // Two bounds matter here: a file without "mapping" used to read
+            // the whole document (a missing key resolves to token 0, the root
+            // object), and the decoder writes one byte per two characters of
+            // its input without knowing how big the option is — so the length
+            // is capped at what the mapping can hold.
             string mapping;
-            json_string("mapping", 0, mapping.data, sizeof mapping);
-            tic_tool_str2buf(mapping.data, strlen(mapping.data), &options->mapping, false);
+            if (json_has("mapping", 0))
+            {
+                json_string("mapping", 0, mapping.data, sizeof mapping);
+                tic_tool_str2buf(mapping.data,
+                    MIN((s32)strlen(mapping.data), (s32)sizeof options->mapping * 2),
+                    &options->mapping, false);
+            }
 
 #if defined(BUILD_EDITORS)
-            options->keybindMode = json_int("keybindMode", 0);
-            options->tabMode = json_int("tabMode", 0);
-            options->tabSize = json_int("tabSize", 0);
+            if (json_has("keybindMode", 0))
+                options->keybindMode = json_int("keybindMode", 0);
+
+            if (json_has("tabMode", 0))
+                options->tabMode = json_int("tabMode", 0);
+
+            if (json_has("tabSize", 0))
+                options->tabSize = json_int("tabSize", 0);
 #endif
         }
     }
@@ -217,6 +266,9 @@ static void saveOptions(Config* config)
             "\"fullscreen\":%s, "
             "\"vsync\":%s, "
             "\"integerScale\":%s, "
+#if defined(BUILD_RENDER_CACHE)
+            "\"drawCache\":%s, "
+#endif
             "\"volume\":%i, "
             "\"autosave\":%s, "
             "\"mapping\":\"%s\""
@@ -234,6 +286,9 @@ static void saveOptions(Config* config)
         bool2str(options->fullscreen),
         bool2str(options->vsync),
         bool2str(options->integerScale),
+#if defined(BUILD_RENDER_CACHE)
+        bool2str(options->drawCache),
+#endif
         options->volume,
         bool2str(options->autosave),
         data2str(&options->mapping, sizeof options->mapping).data

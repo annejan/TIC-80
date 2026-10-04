@@ -9,6 +9,11 @@ set(TIC80STUDIO_SRC
     ${TIC80LIB_DIR}/studio/screens/mainmenu.c
     ${TIC80LIB_DIR}/studio/screens/start.c
     ${TIC80LIB_DIR}/studio/studio.c
+    # The strip, and the three drawing helpers it hosts for every build: the
+    # strip's own widgets are editors-only, but menu.c and the panels below it
+    # reach those helpers too.
+    ${TIC80LIB_DIR}/studio/toolbar.c
+    ${TIC80LIB_DIR}/studio/rom.c
     ${TIC80LIB_DIR}/studio/config.c
     ${TIC80LIB_DIR}/studio/fs.c
     ${TIC80LIB_DIR}/ext/md5.c
@@ -16,17 +21,18 @@ set(TIC80STUDIO_SRC
     ${TIC80LIB_DIR}/ext/png.c
 )
 
+# net.c serves the console as much as the browser: the version check and the
+# site filesystem both go through it, so it stays whenever either is built.
+if(BUILD_EDITORS OR BUILD_SURF)
+    set(TIC80STUDIO_SRC ${TIC80STUDIO_SRC}
+        ${TIC80LIB_DIR}/studio/net.c
+    )
+endif()
+
 if(BUILD_SURF)
     set(TIC80STUDIO_SRC ${TIC80STUDIO_SRC}
         ${TIC80LIB_DIR}/studio/screens/surf.c
-        ${TIC80LIB_DIR}/studio/net.c
     )
-
-    if(NOT BUILD_EDITORS)
-        set(TIC80STUDIO_SRC ${TIC80STUDIO_SRC}
-            ${TIC80LIB_DIR}/studio/screens/console_minimal.c
-        )
-    endif()
 endif()
 
 if(BUILD_EDITORS)

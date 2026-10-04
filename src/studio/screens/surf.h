@@ -32,12 +32,15 @@ struct Surf
     tic_mem* tic;
     struct tic_fs* fs;
     struct tic_net* net;
-    struct Console* console;
     struct Config* config;
 
     bool init;
     bool loading;
     s32 ticks;
+
+    // Cover requests the site has not answered yet, so the browser cannot
+    // hold every connection slot with them, see requestCover().
+    s32 coversInFlight;
 
     struct
     {
@@ -85,5 +88,5 @@ struct Surf
     void (*scanline)(tic_mem* tic, s32 row, void* data);
 };
 
-void initSurf(Surf* surf, Studio* studio, struct Console* console);
+void initSurf(Surf* surf, Studio* studio, struct tic_fs* fs, struct tic_net* net, struct Config* config);
 void freeSurf(Surf* surf);
