@@ -24,41 +24,24 @@
 
 #include "studio/studio.h"
 
-#define CART_SIG "TIC.CART"
-
-typedef struct
-{
-    u8 sig[STRLEN(CART_SIG)];
-    s32 appSize;
-    s32 cartSize;
-} EmbedHeader;
-
 typedef struct Start Start;
 
-typedef struct stage {
-    void(*fn)(Start*);
-    u8 ticks;
-} Stage;
-
-struct Start
+// What the intro runs on: the machine it draws with, and the cart its chime
+// comes from. No studio, and nothing to call back into.
+typedef struct
 {
-    Studio* studio;
     tic_mem* tic;
+    const StudioConfig* config;
 
-    bool initialized;
-    Stage stages[5];
+} StartDeps;
 
-    u32 stage;
-    s32 ticks;
-    bool play;
+Start* start_create(const StartDeps* deps);
+void start_tick(Start* start);
+void start_free(Start* start);
 
-    char text[STUDIO_TEXT_BUFFER_SIZE];
-    u8 color[STUDIO_TEXT_BUFFER_SIZE];
+// The intro is over; where that leads is the host's to decide.
+bool start_done(const Start* start);
 
-    bool embed;
-
-    void (*tick)(Start*);
-};
-
-void initStart(Start* start, Studio* studio, const char* cart);
-void freeStart(Start* start);
+// The studio's name, version and copyright: what the splash draws, and what the
+// console prints in builds that reach it without drawing the splash at all.
+void start_banner(char* text, u8* color);

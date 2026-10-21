@@ -22,21 +22,133 @@ if(BUILD_TESTS)
         endif()
 
         target_include_directories(${target} PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/include)
+
+        # Every registration, so one target can build them all below.
+        set_property(GLOBAL APPEND PROPERTY TIC80_TESTS ${target})
         add_test(NAME ${target} COMMAND ${target} ${ARGN})
     endfunction()
+
+    if(BUILD_WITH_JS)
+        add_executable(js-test ${CMAKE_SOURCE_DIR}/tests/js.c)
+        target_link_libraries(js-test PRIVATE js tic80core)
+        tic80_add_test(js-test)
+    endif()
 
     # The strip is tested against the core alone: linking tic80studio instead
     # would hide a call into studio.c, which is the one thing this test is for.
     # version.h is generated into the build directory, and the studio target is
     # what usually publishes that path.
+    # The strip draws its icons and sets its hand cursor through the ui module,
+    # so that builds here too.
     add_executable(toolbar-test
         ${CMAKE_SOURCE_DIR}/tests/toolbar.c
         ${CMAKE_SOURCE_DIR}/src/studio/toolbar.c
+        ${CMAKE_SOURCE_DIR}/src/studio/ui.c
     )
 
     target_include_directories(toolbar-test PRIVATE ${CMAKE_BINARY_DIR})
     target_link_libraries(toolbar-test PRIVATE tic80core)
     tic80_add_test(toolbar-test)
+
+    # The gamepad header is compiled with its test backend here: the slot
+    # policy, the deadzone and the stick are exercised with no pad plugged in,
+    # and on every platform — the platform backends above it need none of this.
+    add_executable(sgamepad-test ${CMAKE_SOURCE_DIR}/tests/sgamepad.c)
+    tic80_add_test(sgamepad-test)
+
+    # The Windows readers are pure functions over reports, so what a pad can
+    # only be asked for is asked here instead: a report in, its bits out. No
+    # platform is touched, which is why this runs everywhere the rest do.
+    add_executable(sgamepad-hid-test ${CMAKE_SOURCE_DIR}/tests/sgamepad_hid.c)
+    tic80_add_test(sgamepad-hid-test)
+
+    # The studio's sound is a module of its own, and links with the core alone:
+    # nothing the test reaches goes near the studio, and its header names only
+    # the core, so no build directory is needed here either.
+    add_executable(sound-test
+        ${CMAKE_SOURCE_DIR}/tests/sound.c
+        ${CMAKE_SOURCE_DIR}/src/studio/sound.c
+    )
+
+    target_link_libraries(sound-test PRIVATE tic80core)
+    tic80_add_test(sound-test)
+
+    # The icon and the cursor are a module of their own, and link with the core
+    # alone: the strip is one of their callers, not their owner.
+    add_executable(ui-test
+        ${CMAKE_SOURCE_DIR}/tests/ui.c
+        ${CMAKE_SOURCE_DIR}/src/studio/ui.c
+    )
+
+    target_link_libraries(ui-test PRIVATE tic80core)
+    tic80_add_test(ui-test)
+
+    # The keyboard links with the core alone as well, and the platform call it
+    # makes is the test's own to answer. That call is declared in system.h,
+    # which wants the generated version.h, so this one keeps the build dir.
+    add_executable(keyboard-test
+        ${CMAKE_SOURCE_DIR}/tests/keyboard.c
+        ${CMAKE_SOURCE_DIR}/src/studio/keyboard.c
+    )
+
+    target_include_directories(keyboard-test PRIVATE ${CMAKE_BINARY_DIR})
+    target_link_libraries(keyboard-test PRIVATE tic80core)
+    tic80_add_test(keyboard-test)
+
+    # The pointer and the buttons, with the core alone as well: the machine's
+    # pointer for the one, the state struct for the others.
+    add_executable(mouse-test
+        ${CMAKE_SOURCE_DIR}/tests/mouse.c
+        ${CMAKE_SOURCE_DIR}/src/studio/mouse.c
+    )
+
+    target_link_libraries(mouse-test PRIVATE tic80core)
+    tic80_add_test(mouse-test)
+
+    # The splash links without the studio too: start.c and the module it plays
+    # through, with the core and nothing else.
+    add_executable(start-test
+        ${CMAKE_SOURCE_DIR}/tests/start.c
+        ${CMAKE_SOURCE_DIR}/src/studio/screens/start.c
+        ${CMAKE_SOURCE_DIR}/src/studio/sound.c
+    )
+
+    target_include_directories(start-test PRIVATE ${CMAKE_BINARY_DIR})
+    target_link_libraries(start-test PRIVATE tic80core)
+    tic80_add_test(start-test)
+
+    # The embedded cart format has two ends and this test drives one into the
+    # other with the core alone, and with no build directory either: that is
+    # only there for studio.h's version.h, which this module no longer needs.
+    add_executable(embed-test
+        ${CMAKE_SOURCE_DIR}/tests/embed.c
+        ${CMAKE_SOURCE_DIR}/src/studio/embed.c
+    )
+
+    target_link_libraries(embed-test PRIVATE tic80core)
+    tic80_add_test(embed-test)
+
+    # The console is the module whose face is a request the host answers, and
+    # this test is its host: it builds the module with the core and the modules
+    # it names — no studio anywhere — and every command it is given ends in an
+    # ask the test takes and answers. Net is compiled without USE_NAETT, which
+    # is net's own no-network shape: the test opens no sockets either.
+    add_executable(console-test
+        ${CMAKE_SOURCE_DIR}/tests/console.c
+        ${CMAKE_SOURCE_DIR}/src/studio/screens/console.c
+        ${CMAKE_SOURCE_DIR}/src/studio/keyboard.c
+        ${CMAKE_SOURCE_DIR}/src/studio/mouse.c
+        ${CMAKE_SOURCE_DIR}/src/studio/ui.c
+        ${CMAKE_SOURCE_DIR}/src/studio/screens/start.c
+        ${CMAKE_SOURCE_DIR}/src/studio/embed.c
+        ${CMAKE_SOURCE_DIR}/src/studio/fs.c
+        ${CMAKE_SOURCE_DIR}/src/studio/net.c
+        ${CMAKE_SOURCE_DIR}/src/ext/json.c
+    )
+
+    target_include_directories(console-test PRIVATE ${CMAKE_BINARY_DIR} ${THIRDPARTY_DIR}/jsmn)
+    target_link_libraries(console-test PRIVATE tic80core zip)
+    tic80_add_test(console-test)
 
     # The FFT module, driven offline by both tests. They build its sources
     # rather than linking the core, because the stubs variant below has to
@@ -82,5 +194,22 @@ if(BUILD_TESTS)
 
         tic80_add_test(python-outline-test $<TARGET_FILE:python>)
     endif()
+
+    # The API conformance suite records every API call of every language
+    # through traps over core->api, no window. It needs the static runtime:
+    # only there does tic_scripts() list every binding instead of leaving
+    # them to be loaded as modules at run time.
+    if(BUILD_STATIC)
+        add_executable(api-conformance
+            ${CMAKE_SOURCE_DIR}/tests/conformance/runner.c
+            ${CMAKE_SOURCE_DIR}/tests/conformance/traps.c)
+        target_link_libraries(api-conformance PRIVATE tic80core)
+        tic80_add_test(api-conformance ${CMAKE_SOURCE_DIR}/tests/conformance/probes)
+    endif()
+
+    # One target for the whole suite — what CI builds, so a test registered
+    # above is built and run without a change to the workflow.
+    get_property(tic80_tests GLOBAL PROPERTY TIC80_TESTS)
+    add_custom_target(tic80-tests DEPENDS ${tic80_tests})
 
 endif()

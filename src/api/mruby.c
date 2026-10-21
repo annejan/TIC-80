@@ -27,9 +27,21 @@
 #include <string.h>
 #include <ctype.h>
 
+// mruby's inline helpers (value.h, through mruby.h) carry a statement MSVC
+// reads as unreachable, and since the function is instantiated here the
+// warning is counted as ours: /external does not reach it.
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4702)
+#endif
+
 #include <mruby.h>
 #include <mruby/compile.h>
 #include <mruby/error.h>
+// mruby 3.2 moved the backtrace API out of the public error.h.
+#if MRUBY_RELEASE_NO >= 30200
+#include <mruby/internal.h>
+#endif
 #include <mruby/throw.h>
 #include <mruby/array.h>
 #include <mruby/hash.h>
@@ -37,9 +49,14 @@
 #include <mruby/value.h>
 #include <mruby/string.h>
 
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+
 extern bool parse_note(const char* noteStr, s32* note, s32* octave);
 
-typedef struct {
+typedef struct
+{
     struct mrb_state* mrb;
     struct mrbc_context* mrb_cxt;
 } mrbVm;
@@ -47,183 +64,242 @@ typedef struct {
 static tic_core* CurrentMachine = NULL;
 static inline tic_core* getMRubyMachine(mrb_state* mrb)
 {
+    (void)mrb;
     return CurrentMachine;
 }
 
 static mrb_value mrb_peek(mrb_state* mrb, mrb_value self)
 {
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    (void)self;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
     mrb_int address;
     mrb_int bits = BITS_IN_BYTE;
     mrb_get_args(mrb, "i|i", &address, &bits);
 
-    return mrb_fixnum_value(core->api.peek(tic, address, bits));
+    return mrb_fixnum_value(core->api.peek(tic, (s32)(address), (s32)bits));
 }
 
 static mrb_value mrb_poke(mrb_state* mrb, mrb_value self)
 {
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
-
+    (void)self;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
     mrb_int address, value;
     mrb_int bits = BITS_IN_BYTE;
     mrb_get_args(mrb, "ii|i", &address, &value, &bits);
 
-    core->api.poke(tic, address, value, bits);
+    core->api.poke(tic, (s32)(address), (u8)value, (s32)bits);
 
     return mrb_nil_value();
 }
 
 static mrb_value mrb_peek1(mrb_state* mrb, mrb_value self)
 {
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
-
+    (void)self;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
     mrb_int address;
     mrb_get_args(mrb, "i", &address);
 
-    return mrb_fixnum_value(core->api.peek1(tic, address));
+    return mrb_fixnum_value(core->api.peek1(tic, (s32)address));
 }
 
 static mrb_value mrb_poke1(mrb_state* mrb, mrb_value self)
 {
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
-
+    (void)self;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
     mrb_int address, value;
     mrb_get_args(mrb, "ii", &address, &value);
 
-    core->api.poke1(tic, address, value);
+    core->api.poke1(tic, (s32)address, (u8)value);
 
     return mrb_nil_value();
 }
 
 static mrb_value mrb_peek2(mrb_state* mrb, mrb_value self)
 {
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
-
+    (void)self;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
     mrb_int address;
     mrb_get_args(mrb, "i", &address);
 
-    return mrb_fixnum_value(core->api.peek2(tic, address));
+    return mrb_fixnum_value(core->api.peek2(tic, (s32)address));
 }
 
 static mrb_value mrb_poke2(mrb_state* mrb, mrb_value self)
 {
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
-
+    (void)self;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
     mrb_int address, value;
     mrb_get_args(mrb, "ii", &address, &value);
 
-    core->api.poke2(tic, address, value);
+    core->api.poke2(tic, (s32)address, (u8)value);
 
     return mrb_nil_value();
 }
 
 static mrb_value mrb_peek4(mrb_state* mrb, mrb_value self)
 {
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
-
+    (void)self;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
     mrb_int address;
     mrb_get_args(mrb, "i", &address);
 
-    return mrb_fixnum_value(core->api.peek4(tic, address));
+    return mrb_fixnum_value(core->api.peek4(tic, (s32)address));
 }
 
 static mrb_value mrb_poke4(mrb_state* mrb, mrb_value self)
 {
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
-
+    (void)self;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
     mrb_int address, value;
     mrb_get_args(mrb, "ii", &address, &value);
 
-    core->api.poke4(tic, address, value);
+    core->api.poke4(tic, (s32)address, (u8)value);
 
     return mrb_nil_value();
 }
 
 static mrb_value mrb_cls(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int color = 0;
     mrb_get_args(mrb, "|i", &color);
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
-    core->api.cls(tic, color);
+    core->api.cls(tic, (u8)color);
 
     return mrb_nil_value();
 }
 
 static mrb_value mrb_pix(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int x, y, color;
     mrb_int argc = mrb_get_args(mrb, "ii|i", &x, &y, &color);
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
     if(argc == 3)
     {
-        core->api.pix(tic, x, y, color, false);
+        core->api.pix(tic, (s32)(x), (s32)y, (u8)color, false);
         return mrb_nil_value();
     }
     else
     {
-        return mrb_fixnum_value(core->api.pix(tic, x, y, 0, true));
+        return mrb_fixnum_value(core->api.pix(tic, (s32)(x), (s32)y, 0, true));
     }
 }
 
 static mrb_value mrb_line(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_float x0, y0, x1, y1;
     mrb_int color;
     mrb_get_args(mrb, "ffffi", &x0, &y0, &x1, &y1, &color);
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
-    core->api.line(tic, x0, y0, x1, y1, color);
+    core->api.line(tic, (float)(x0), (float)(y0), (float)(x1), (float)y1, (u8)color);
 
     return mrb_nil_value();
 }
 
 static mrb_value mrb_rect(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int x, y, w, h, color;
     mrb_get_args(mrb, "iiiii", &x, &y, &w, &h, &color);
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
-    core->api.rect(tic, x, y, w, h, color);
+    core->api.rect(tic, (s32)(x), (s32)(y), (s32)(w), (s32)h, (u8)color);
 
     return mrb_nil_value();
 }
 
 static mrb_value mrb_rectb(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int x, y, w, h, color;
     mrb_get_args(mrb, "iiiii", &x, &y, &w, &h, &color);
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
-    core->api.rectb(tic, x, y, w, h, color);
+    core->api.rectb(tic, (s32)(x), (s32)(y), (s32)(w), (s32)h, (u8)color);
+
+    return mrb_nil_value();
+}
+
+static mrb_value mrb_rrect(mrb_state* mrb, mrb_value self)
+{
+    (void)self;
+    mrb_int x, y, w, h, color, radius;
+    mrb_float exponent;
+    const mrb_int argc = mrb_get_args(mrb, "iiiii|if", &x, &y, &w, &h, &color, &radius, &exponent);
+    if(argc < 6) radius = -1;
+    if(argc < 7) exponent = 2;
+
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
+
+    core->api.rrect(tic, (s32)x, (s32)y, (s32)w, (s32)h, (u8)color, (s32)radius, (float)exponent);
+
+    return mrb_nil_value();
+}
+
+static mrb_value mrb_rrectb(mrb_state* mrb, mrb_value self)
+{
+    (void)self;
+    mrb_int x, y, w, h, color, radius;
+    mrb_float exponent;
+    const mrb_int argc = mrb_get_args(mrb, "iiiii|if", &x, &y, &w, &h, &color, &radius, &exponent);
+    if(argc < 6) radius = -1;
+    if(argc < 7) exponent = 2;
+
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
+
+    core->api.rrectb(tic, (s32)x, (s32)y, (s32)w, (s32)h, (u8)color, (s32)radius, (float)exponent);
 
     return mrb_nil_value();
 }
 
 static mrb_value mrb_circ(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int x, y, radius, color;
     mrb_get_args(mrb, "iiii", &x, &y, &radius, &color);
 
-    if(radius >= 0) {
-        tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    if(radius >= 0)
+    {
+        tic_core* core = getMRubyMachine(mrb);
+        tic_mem* tic = (tic_mem*)core;
 
-        core->api.circ(tic, x, y, radius, color);
-    } else {
+        core->api.circ(tic, (s32)(x), (s32)(y), (s32)radius, (u8)color);
+    }
+    else
+    {
         mrb_raise(mrb, E_ARGUMENT_ERROR, "radius must be greater than or equal 0");
     }
 
@@ -232,14 +308,19 @@ static mrb_value mrb_circ(mrb_state* mrb, mrb_value self)
 
 static mrb_value mrb_circb(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int x, y, radius, color;
     mrb_get_args(mrb, "iiii", &x, &y, &radius, &color);
 
-    if(radius >= 0) {
-        tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    if(radius >= 0)
+    {
+        tic_core* core = getMRubyMachine(mrb);
+        tic_mem* tic = (tic_mem*)core;
 
-        core->api.circb(tic, x, y, radius, color);
-    } else {
+        core->api.circb(tic, (s32)(x), (s32)(y), (s32)radius, (u8)color);
+    }
+    else
+    {
         mrb_raise(mrb, E_ARGUMENT_ERROR, "radius must be greater than or equal 0");
     }
 
@@ -248,141 +329,156 @@ static mrb_value mrb_circb(mrb_state* mrb, mrb_value self)
 
 static mrb_value mrb_elli(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int x, y, a, b, color;
     mrb_get_args(mrb, "iiiii", &x, &y, &a, &b, &color);
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
-    core->api.elli(tic, x, y, a, b, color);
+    core->api.elli(tic, (s32)(x), (s32)(y), (s32)(a), (s32)b, (u8)color);
 
     return mrb_nil_value();
 }
 
 static mrb_value mrb_ellib(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int x, y, a, b, color;
     mrb_get_args(mrb, "iiiii", &x, &y, &a, &b, &color);
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
-    core->api.ellib(tic, x, y, a, b, color);
+    core->api.ellib(tic, (s32)(x), (s32)(y), (s32)(a), (s32)b, (u8)color);
 
     return mrb_nil_value();
 }
 
 static mrb_value mrb_paint(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int x, y, color;
     mrb_int bordercolor = -1;
     mrb_get_args(mrb, "iii|i", &x, &y, &color, &bordercolor);
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
-    core->api.paint(tic, x, y, color, bordercolor);
+    core->api.paint(tic, (s32)(x), (s32)y, (u8)(color), (u8)bordercolor);
 
     return mrb_nil_value();
 }
 
 static mrb_value mrb_tri(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_float x1, y1, x2, y2, x3, y3;
     mrb_int color;
     mrb_get_args(mrb, "ffffffi", &x1, &y1, &x2, &y2, &x3, &y3, &color);
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
-    core->api.tri(tic, x1, y1, x2, y2, x3, y3, color);
+    core->api.tri(tic, (float)(x1), (float)(y1), (float)(x2), (float)(y2), (float)(x3), (float)y3, (u8)color);
 
     return mrb_nil_value();
 }
 
 static mrb_value mrb_trib(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_float x1, y1, x2, y2, x3, y3;
     mrb_int color;
     mrb_get_args(mrb, "ffffffi", &x1, &y1, &x2, &y2, &x3, &y3, &color);
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
-    core->api.trib(tic, x1, y1, x2, y2, x3, y3, color);
+    core->api.trib(tic, (float)(x1), (float)(y1), (float)(x2), (float)(y2), (float)(x3), (float)y3, (u8)color);
 
     return mrb_nil_value();
 }
 
 static mrb_value mrb_ttri(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_value chroma = mrb_fixnum_value(0xff);
     mrb_int src = tic_tiles_texture;
 
     mrb_float x1, y1, x2, y2, x3, y3, u1, v1, u2, v2, u3, v3, z1, z2, z3;
     mrb_int argc = mrb_get_args(mrb, "ffffffffffff|iofff",
-            &x1, &y1, &x2, &y2, &x3, &y3,
-            &u1, &v1, &u2, &v2, &u3, &v3,
-            &src, &chroma, &z1, &z2, &z3);
+                                &x1, &y1, &x2, &y2, &x3, &y3,
+                                &u1, &v1, &u2, &v2, &u3, &v3,
+                                &src, &chroma, &z1, &z2, &z3);
 
     mrb_int count;
-    u8 *chromas;
-    if (mrb_array_p(chroma))
+    u8* chromas;
+    if(mrb_array_p(chroma))
     {
         count = ARY_LEN(RARRAY(chroma));
         chromas = malloc(count * sizeof(u8));
 
-        for (mrb_int i = 0; i < count; ++i)
+        for(mrb_int i = 0; i < count; ++i)
         {
-            chromas[i] = mrb_integer(mrb_ary_entry(chroma, i));
+            chromas[i] = (u8)(mrb_integer(mrb_ary_entry(chroma, i)));
         }
     }
     else
     {
         count = 1;
         chromas = malloc(sizeof(u8));
-        chromas[0] = mrb_integer(chroma);
+        chromas[0] = (u8)(mrb_integer(chroma));
     }
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
     core->api.ttri(tic,
-                        x1, y1, x2, y2, x3, y3,
-                        u1, v1, u2, v2, u3, v3,
-                        src, chromas, count, z1, z2, z3, argc == 17);
+                   (float)x1, (float)y1, (float)x2, (float)y2, (float)x3, (float)y3,
+                   (float)u1, (float)v1, (float)u2, (float)v2, (float)u3, (float)v3,
+                   src, chromas, (s32)count, (float)z1, (float)z2, (float)z3, argc == 17);
 
     free(chromas);
 
     return mrb_nil_value();
 }
 
-
 static mrb_value mrb_clip(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int x, y, w, h;
     mrb_int argc = mrb_get_args(mrb, "|iiii", &x, &y, &w, &h);
 
     if(argc == 0)
     {
-        tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+        tic_core* core = getMRubyMachine(mrb);
+        tic_mem* tic = (tic_mem*)core;
 
         core->api.clip(tic, 0, 0, TIC80_WIDTH, TIC80_HEIGHT);
     }
     else if(argc == 4)
     {
-        tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+        tic_core* core = getMRubyMachine(mrb);
 
-        core->api.clip((tic_mem*)getMRubyMachine(mrb), x, y, w, h);
+        core->api.clip((tic_mem*)getMRubyMachine(mrb), (s32)(x), (s32)(y), (s32)(w), (s32)h);
     }
-    else mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid parameters, use clip(x,y,w,h) or clip()");
+    else
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid parameters, use clip(x,y,w,h) or clip()");
 
     return mrb_nil_value();
 }
 
 static mrb_value mrb_btnp(mrb_state* mrb, mrb_value self)
 {
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
-
+    (void)self;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
     mrb_int index, hold, period;
     mrb_int argc = mrb_get_args(mrb, "|iii", &index, &hold, &period);
 
-    if (argc == 0)
+    if(argc == 0)
     {
         return mrb_fixnum_value(core->api.btnp(tic, -1, -1, -1));
     }
@@ -390,9 +486,9 @@ static mrb_value mrb_btnp(mrb_state* mrb, mrb_value self)
     {
         return mrb_bool_value(core->api.btnp(tic, index & 0x1f, -1, -1) != 0);
     }
-    else if (argc == 3)
+    else if(argc == 3)
     {
-        return mrb_bool_value(core->api.btnp(tic, index & 0x1f, hold, period) != 0);
+        return mrb_bool_value(core->api.btnp(tic, index & 0x1f, (s32)(hold), (s32)period) != 0);
     }
     else
     {
@@ -403,17 +499,18 @@ static mrb_value mrb_btnp(mrb_state* mrb, mrb_value self)
 
 static mrb_value mrb_btn(mrb_state* mrb, mrb_value self)
 {
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
-
+    (void)self;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
     mrb_int index, hold, period;
     mrb_int argc = mrb_get_args(mrb, "|i", &index, &hold, &period);
 
-    if (argc == 0)
+    if(argc == 0)
     {
         return mrb_bool_value(core->api.btn(tic, -1) != 0);
     }
-    else if (argc == 1)
+    else if(argc == 1)
     {
         return mrb_bool_value(core->api.btn(tic, index & 0x1f) != 0);
     }
@@ -426,24 +523,29 @@ static mrb_value mrb_btn(mrb_state* mrb, mrb_value self)
 
 static mrb_value mrb_spr(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int index, x, y;
     mrb_int w = 1, h = 1, scale = 1;
     mrb_int flip = tic_no_flip, rotate = tic_no_rotate;
-    mrb_value colors_obj;
+    mrb_value colors_obj = mrb_nil_value();
     static u8 colors[TIC_PALETTE_SIZE];
     mrb_int count = 0;
 
     mrb_int argc = mrb_get_args(mrb, "iii|oiiiii", &index, &x, &y, &colors_obj, &scale, &flip, &rotate, &w, &h);
 
-    if(mrb_array_p(colors_obj))
+    if(argc < 4 || mrb_nil_p(colors_obj))
+    {
+        // no transparent colors: the call the colorkey was left out of
+    }
+    else if(mrb_array_p(colors_obj))
     {
         for(; count < TIC_PALETTE_SIZE && count < ARY_LEN(RARRAY(colors_obj)); count++) // HACK
-            colors[count] = (u8) mrb_int(mrb, mrb_ary_entry(colors_obj, count));
+            colors[count] = (u8)mrb_int(mrb, mrb_ary_entry(colors_obj, count));
         count++;
     }
     else if(mrb_fixnum_p(colors_obj))
     {
-        colors[0] = mrb_int(mrb, colors_obj);
+        colors[0] = (u8)(mrb_int(mrb, colors_obj));
         count = 1;
     }
     else
@@ -452,56 +554,64 @@ static mrb_value mrb_spr(mrb_state* mrb, mrb_value self)
         return mrb_nil_value();
     }
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
-    core->api.spr(tic, index, x, y, w, h, colors, count, scale, flip, rotate);
+    core->api.spr(tic, (s32)(index), (s32)(x), (s32)(y), (s32)(w), (s32)(h), colors, (u8)count, (s32)scale, flip, rotate);
 
     return mrb_nil_value();
 }
 
 static mrb_value mrb_mget(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int x, y;
     mrb_get_args(mrb, "ii", &x, &y);
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
-    u8 value = core->api.mget(tic, x, y);
+    u8 value = core->api.mget(tic, (s32)(x), (s32)y);
     return mrb_fixnum_value(value);
 }
 
 static mrb_value mrb_mset(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int x, y, val;
     mrb_get_args(mrb, "iii", &x, &y, &val);
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
-    core->api.mset(tic, x, y, val);
+    core->api.mset(tic, (s32)(x), (s32)y, (u8)val);
 
     return mrb_nil_value();
 }
 
 static mrb_value mrb_tstamp(mrb_state* mrb, mrb_value self)
 {
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    (void)self;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
     return mrb_fixnum_value(core->api.tstamp(tic));
 }
 
 static mrb_value mrb_vbank(mrb_state* mrb, mrb_value self)
 {
-    tic_core *core = getMRubyMachine(mrb);
-    tic_mem *tic = (tic_mem*)core;
+    (void)self;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
     s32 prev = core->state.vbank.id;
 
     mrb_int vbank;
     mrb_int argc = mrb_get_args(mrb, "|i", &vbank);
 
-    if (argc >= 1)
+    if(argc >= 1)
     {
-        core->api.vbank(tic, vbank);
+        core->api.vbank(tic, (s32)vbank);
     }
 
     return mrb_fixnum_value(prev);
@@ -509,252 +619,268 @@ static mrb_value mrb_vbank(mrb_state* mrb, mrb_value self)
 
 static mrb_value mrb_fget(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int index, flag;
     mrb_get_args(mrb, "ii", &index, &flag);
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
-    return mrb_bool_value(core->api.fget(tic, index, flag));
+    return mrb_bool_value(core->api.fget(tic, (s32)index, (u8)flag));
 }
 
 static mrb_value mrb_fset(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int index, flag;
     mrb_bool value;
     mrb_get_args(mrb, "iib", &index, &flag, &value);
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
-    core->api.fset(tic, index, flag, value);
+    core->api.fset(tic, (s32)index, (u8)flag, value);
 
     return mrb_nil_value();
 }
 
 static mrb_value mrb_vqt(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int bin;
     mrb_int argc = mrb_get_args(mrb, "i", &bin);
 
     tic_core* core = getMRubyMachine(mrb);
     tic_mem* tic = (tic_mem*)core;
 
-    if (argc == 0)
+    if(argc == 0)
     {
         mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid params, vqt(bin)\n");
         return mrb_nil_value();
     }
     else
     {
-        return mrb_float_value(mrb, core->api.vqt(tic, bin));
+        return mrb_float_value(mrb, core->api.vqt(tic, (s32)bin));
     }
 }
 
 static mrb_value mrb_vqts(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int bin;
     mrb_int argc = mrb_get_args(mrb, "i", &bin);
 
     tic_core* core = getMRubyMachine(mrb);
     tic_mem* tic = (tic_mem*)core;
 
-    if (argc == 0)
+    if(argc == 0)
     {
         mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid params, vqts(bin)\n");
         return mrb_nil_value();
     }
     else
     {
-        return mrb_float_value(mrb, core->api.vqts(tic, bin));
+        return mrb_float_value(mrb, core->api.vqts(tic, (s32)bin));
     }
 }
 
 static mrb_value mrb_vqtr(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int bin;
     mrb_int argc = mrb_get_args(mrb, "i", &bin);
 
     tic_core* core = getMRubyMachine(mrb);
     tic_mem* tic = (tic_mem*)core;
 
-    if (argc == 0)
+    if(argc == 0)
     {
         mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid params, vqtr(bin)\n");
         return mrb_nil_value();
     }
     else
     {
-        return mrb_float_value(mrb, core->api.vqtr(tic, bin));
+        return mrb_float_value(mrb, core->api.vqtr(tic, (s32)bin));
     }
 }
 
 static mrb_value mrb_vqtrs(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int bin;
     mrb_int argc = mrb_get_args(mrb, "i", &bin);
 
     tic_core* core = getMRubyMachine(mrb);
     tic_mem* tic = (tic_mem*)core;
 
-    if (argc == 0)
+    if(argc == 0)
     {
         mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid params, vqtrs(bin)\n");
         return mrb_nil_value();
     }
     else
     {
-        return mrb_float_value(mrb, core->api.vqtrs(tic, bin));
+        return mrb_float_value(mrb, core->api.vqtrs(tic, (s32)bin));
     }
 }
 
 static mrb_value mrb_vqtw(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int bin;
     mrb_int argc = mrb_get_args(mrb, "i", &bin);
 
     tic_core* core = getMRubyMachine(mrb);
     tic_mem* tic = (tic_mem*)core;
 
-    if (argc == 0)
+    if(argc == 0)
     {
         mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid params, vqtw(bin)\n");
         return mrb_nil_value();
     }
     else
     {
-        return mrb_float_value(mrb, core->api.vqtw(tic, bin));
+        return mrb_float_value(mrb, core->api.vqtw(tic, (s32)bin));
     }
 }
 
 static mrb_value mrb_vqtsw(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int bin;
     mrb_int argc = mrb_get_args(mrb, "i", &bin);
 
     tic_core* core = getMRubyMachine(mrb);
     tic_mem* tic = (tic_mem*)core;
 
-    if (argc == 0)
+    if(argc == 0)
     {
         mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid params, vqtsw(bin)\n");
         return mrb_nil_value();
     }
     else
     {
-        return mrb_float_value(mrb, core->api.vqtsw(tic, bin));
+        return mrb_float_value(mrb, core->api.vqtsw(tic, (s32)bin));
     }
 }
 
 static mrb_value mrb_vqtrw(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int bin;
     mrb_int argc = mrb_get_args(mrb, "i", &bin);
 
     tic_core* core = getMRubyMachine(mrb);
     tic_mem* tic = (tic_mem*)core;
 
-    if (argc == 0)
+    if(argc == 0)
     {
         mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid params, vqtrw(bin)\n");
         return mrb_nil_value();
     }
     else
     {
-        return mrb_float_value(mrb, core->api.vqtrw(tic, bin));
+        return mrb_float_value(mrb, core->api.vqtrw(tic, (s32)bin));
     }
 }
 
 static mrb_value mrb_vqtrsw(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int bin;
     mrb_int argc = mrb_get_args(mrb, "i", &bin);
 
     tic_core* core = getMRubyMachine(mrb);
     tic_mem* tic = (tic_mem*)core;
 
-    if (argc == 0)
+    if(argc == 0)
     {
         mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid params, vqtrsw(bin)\n");
         return mrb_nil_value();
     }
     else
     {
-        return mrb_float_value(mrb, core->api.vqtrsw(tic, bin));
+        return mrb_float_value(mrb, core->api.vqtrsw(tic, (s32)bin));
     }
 }
 
 static mrb_value mrb_fft(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int start_freq, end_freq = -1;
     mrb_int argc = mrb_get_args(mrb, "i|i", &start_freq, &end_freq);
 
     tic_core* core = getMRubyMachine(mrb);
     tic_mem* tic = (tic_mem*)core;
 
-    if (argc == 0)
+    if(argc == 0)
     {
         mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid params, fft [ start_freq end_freq ]\n");
         return mrb_nil_value();
     }
     else
     {
-        return mrb_float_value(mrb, core->api.fft(tic, start_freq, end_freq));
+        return mrb_float_value(mrb, core->api.fft(tic, (s32)(start_freq), (s32)end_freq));
     }
 }
 
 static mrb_value mrb_fftr(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int start_freq, end_freq = -1;
     mrb_int argc = mrb_get_args(mrb, "i|i", &start_freq, &end_freq);
 
     tic_core* core = getMRubyMachine(mrb);
     tic_mem* tic = (tic_mem*)core;
 
-    if (argc == 0)
+    if(argc == 0)
     {
         mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid params, fftr [ start_freq end_freq ]\n");
         return mrb_nil_value();
     }
     else
     {
-        return mrb_float_value(mrb, core->api.fftr(tic, start_freq, end_freq));
+        return mrb_float_value(mrb, core->api.fftr(tic, (s32)(start_freq), (s32)end_freq));
     }
 }
 
 static mrb_value mrb_fftrs(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int start_freq, end_freq = -1;
     mrb_int argc = mrb_get_args(mrb, "i|i", &start_freq, &end_freq);
 
     tic_core* core = getMRubyMachine(mrb);
     tic_mem* tic = (tic_mem*)core;
 
-    if (argc == 0)
+    if(argc == 0)
     {
         mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid params, fftrs [ start_freq end_freq ]\n");
         return mrb_nil_value();
     }
     else
     {
-        return mrb_float_value(mrb, core->api.fftrs(tic, start_freq, end_freq));
+        return mrb_float_value(mrb, core->api.fftrs(tic, (s32)(start_freq), (s32)end_freq));
     }
 }
 
 static mrb_value mrb_ffts(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int start_freq, end_freq = -1;
     mrb_int argc = mrb_get_args(mrb, "i|i", &start_freq, &end_freq);
 
     tic_core* core = getMRubyMachine(mrb);
     tic_mem* tic = (tic_mem*)core;
 
-    if (argc == 0)
+    if(argc == 0)
     {
         mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid params, ffts [ start_freq end_freq ]\n");
         return mrb_nil_value();
     }
     else
     {
-        return mrb_float_value(mrb, core->api.ffts(tic, start_freq, end_freq));
+        return mrb_float_value(mrb, core->api.ffts(tic, (s32)(start_freq), (s32)end_freq));
     }
 }
 
@@ -772,74 +898,83 @@ static void remapCallback(void* data, s32 x, s32 y, RemapResult* result)
     mrb_value vals[] = {
         mrb_fixnum_value(result->index),
         mrb_fixnum_value(x),
-        mrb_fixnum_value(y)
-    };
+        mrb_fixnum_value(y)};
     mrb_value out = mrb_yield_argv(mrb, remap->block, 3, vals);
 
-    if (mrb_array_p(out))
+    if(mrb_array_p(out))
     {
         mrb_int len = ARY_LEN(RARRAY(out));
-        if (len > 3) len = 3;
-        switch (len)
+        if(len > 3) len = 3;
+        switch(len)
         {
-        case 3:
-            result->rotate = mrb_int(mrb, mrb_ary_entry(out, 2));
-        case 2:
-            result->flip = mrb_int(mrb, mrb_ary_entry(out, 1));
-        case 1:
-            result->index = mrb_int(mrb, mrb_ary_entry(out, 0));
+            case 3:
+                result->rotate = mrb_int(mrb, mrb_ary_entry(out, 2));
+                // fall through
+            case 2:
+                result->flip = mrb_int(mrb, mrb_ary_entry(out, 1));
+                // fall through
+            case 1:
+                result->index = (u8)(mrb_int(mrb, mrb_ary_entry(out, 0)));
         }
     }
     else
     {
-        result->index = mrb_int(mrb, out);
+        result->index = (u8)(mrb_int(mrb, out));
     }
 }
 
 static mrb_value mrb_map(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int x = 0;
     mrb_int y = 0;
     mrb_int w = TIC_MAP_SCREEN_WIDTH;
     mrb_int h = TIC_MAP_SCREEN_HEIGHT;
     mrb_int sx = 0;
     mrb_int sy = 0;
-    mrb_value chroma;
+    mrb_value chroma = mrb_nil_value();
     mrb_int scale = 1;
     mrb_value block;
 
-    mrb_int argc = mrb_get_args(mrb, "|iiiiiioi&", &x, &y, &w, &h, &sx, &sy, &chroma, &scale, &block);
+    mrb_get_args(mrb, "|iiiiiioi&", &x, &y, &w, &h, &sx, &sy, &chroma, &scale, &block);
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
     mrb_int count;
-    u8 *chromas;
+    u8* chromas;
 
-    if (mrb_array_p(chroma))
+    if(mrb_array_p(chroma))
     {
         count = ARY_LEN(RARRAY(chroma));
         chromas = malloc(count * sizeof(u8));
 
-        for (mrb_int i = 0; i < count; ++i)
+        for(mrb_int i = 0; i < count; ++i)
         {
-            chromas[i] = mrb_integer(mrb_ary_entry(chroma, i));
+            chromas[i] = (u8)(mrb_integer(mrb_ary_entry(chroma, i)));
         }
     }
-    else
+    else if(mrb_fixnum_p(chroma))
     {
         count = 1;
         chromas = malloc(sizeof(u8));
-        chromas[0] = mrb_integer(chroma);
-    }
-
-    if (mrb_proc_p(block))
-    {
-        RemapData data = { mrb, block };
-        core->api.map(tic, x, y, w, h, sx, sy, chromas, count, scale, remapCallback, &data);
+        chromas[0] = (u8)(mrb_integer(chroma));
     }
     else
     {
-        core->api.map(tic, x, y, w, h, sx, sy, chromas, count, scale, NULL, NULL);
+        // no transparent colors: the call the chroma was left out of
+        count = 0;
+        chromas = NULL;
+    }
+
+    if(mrb_proc_p(block))
+    {
+        RemapData data = {mrb, block};
+        core->api.map(tic, (s32)(x), (s32)(y), (s32)(w), (s32)(h), (s32)(sx), (s32)(sy), chromas, (u8)count, (s32)scale, remapCallback, &data);
+    }
+    else
+    {
+        core->api.map(tic, (s32)(x), (s32)(y), (s32)(w), (s32)(h), (s32)(sx), (s32)(sy), chromas, (u8)count, (s32)scale, NULL, NULL);
     }
 
     free(chromas);
@@ -849,6 +984,7 @@ static mrb_value mrb_map(mrb_state* mrb, mrb_value self)
 
 static mrb_value mrb_music(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int track = 0;
     mrb_int frame = -1;
     mrb_int row = -1;
@@ -857,9 +993,10 @@ static mrb_value mrb_music(mrb_state* mrb, mrb_value self)
     mrb_int tempo = -1;
     mrb_int speed = -1;
 
-    mrb_int argc = mrb_get_args(mrb, "|iiibbii", &track, &frame, &row, &loop, &sustain, &tempo, &speed);
+    mrb_get_args(mrb, "|iiibbii", &track, &frame, &row, &loop, &sustain, &tempo, &speed);
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
     core->api.music(tic, -1, 0, 0, false, false, -1, -1);
 
@@ -868,7 +1005,7 @@ static mrb_value mrb_music(mrb_state* mrb, mrb_value self)
         if(track > MUSIC_TRACKS - 1)
             mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid music track index");
         else
-            core->api.music(tic, track, frame, row, loop, sustain, tempo, speed);
+            core->api.music(tic, (s32)(track), (s32)(frame), (s32)(row), loop, sustain, (s32)(tempo), (s32)speed);
     }
 
     return mrb_nil_value();
@@ -876,6 +1013,7 @@ static mrb_value mrb_music(mrb_state* mrb, mrb_value self)
 
 static mrb_value mrb_sfx(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int index;
 
     mrb_value note_obj;
@@ -889,18 +1027,19 @@ static mrb_value mrb_sfx(mrb_state* mrb, mrb_value self)
 
     mrb_int argc = mrb_get_args(mrb, "i|oiio!i", &index, &note_obj, &duration, &channel, &volume, &speed);
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
-    if (mrb_array_p(volume))
+    if(mrb_array_p(volume))
     {
-        for (mrb_int i = 0; i < TIC80_SAMPLE_CHANNELS; ++i)
+        for(mrb_int i = 0; i < TIC80_SAMPLE_CHANNELS; ++i)
         {
             volumes[i] = mrb_integer(mrb_ary_entry(volume, i));
         }
     }
-    else if (mrb_fixnum_p(volume))
+    else if(mrb_fixnum_p(volume))
     {
-        for (size_t ch = 0; ch < TIC80_SAMPLE_CHANNELS; ++ch)
+        for(size_t ch = 0; ch < TIC80_SAMPLE_CHANNELS; ++ch)
         {
             volumes[ch] = mrb_integer(volume);
         }
@@ -913,7 +1052,7 @@ static mrb_value mrb_sfx(mrb_state* mrb, mrb_value self)
 
     if(index < SFX_COUNT)
     {
-        if (index >= 0)
+        if(index >= 0)
         {
             tic_sample* effect = tic->ram->sfx.samples.data + index;
 
@@ -922,20 +1061,20 @@ static mrb_value mrb_sfx(mrb_state* mrb, mrb_value self)
             speed = effect->speed;
         }
 
-        if (argc >= 2)
+        if(argc >= 2)
         {
-            if (mrb_fixnum_p(note_obj))
+            if(mrb_fixnum_p(note_obj))
             {
                 mrb_int id = mrb_integer(note_obj);
                 note = id % NOTES;
                 octave = id / NOTES;
             }
-            else if (mrb_string_p(note_obj))
+            else if(mrb_string_p(note_obj))
             {
                 const char* noteStr = mrb_str_to_cstr(mrb, mrb_funcall(mrb, note_obj, "to_s", 0));
 
                 s32 octave32;
-                if (!parse_note(noteStr, &note, &octave32))
+                if(!parse_note(noteStr, &note, &octave32))
                 {
                     mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid note, should be like C#4");
                     return mrb_nil_value();
@@ -949,29 +1088,33 @@ static mrb_value mrb_sfx(mrb_state* mrb, mrb_value self)
             }
         }
 
-        if (channel >= 0 && channel < TIC_SOUND_CHANNELS)
+        if(channel >= 0 && channel < TIC_SOUND_CHANNELS)
         {
-            core->api.sfx(tic, index, note, octave, duration, channel, volumes[0] & 0xf, volumes[1] & 0xf, speed);
+            core->api.sfx(tic, (s32)(index), note, (s32)(octave), (s32)(duration), (s32)(channel), volumes[0] & 0xf, volumes[1] & 0xf, (s32)speed);
         }
-        else mrb_raise(mrb, E_ARGUMENT_ERROR, "unknown channel");
+        else
+            mrb_raise(mrb, E_ARGUMENT_ERROR, "unknown channel");
     }
-    else mrb_raise(mrb, E_ARGUMENT_ERROR, "unknown sfx index");
+    else
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "unknown sfx index");
 
     return mrb_nil_value();
 }
 
 static mrb_value mrb_sync(mrb_state* mrb, mrb_value self)
 {
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    (void)self;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
     mrb_int mask = 0;
     mrb_int bank = 0;
     mrb_bool toCart = false;
 
-    mrb_int argc = mrb_get_args(mrb, "|iib", &mask, &bank, &toCart);
+    mrb_get_args(mrb, "|iib", &mask, &bank, &toCart);
 
     if(bank >= 0 && bank < TIC_BANKS)
-        core->api.sync(tic, mask, bank, toCart);
+        core->api.sync(tic, (u32)mask, (s32)bank, toCart);
     else
         mrb_raise(mrb, E_ARGUMENT_ERROR, "sync() error, invalid bank");
 
@@ -980,7 +1123,8 @@ static mrb_value mrb_sync(mrb_state* mrb, mrb_value self)
 
 static mrb_value mrb_reset(mrb_state* mrb, mrb_value self)
 {
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    (void)self;
+    tic_core* core = getMRubyMachine(mrb);
 
     core->state.initialized = false;
 
@@ -989,17 +1133,19 @@ static mrb_value mrb_reset(mrb_state* mrb, mrb_value self)
 
 static mrb_value mrb_key(mrb_state* mrb, mrb_value self)
 {
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    (void)self;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
     mrb_int key;
     mrb_int argc = mrb_get_args(mrb, "|i", &key);
 
-    if (argc == 0)
+    if(argc == 0)
         return mrb_bool_value(core->api.key(tic, tic_key_unknown));
     else
     {
         if(key < tic_key_escape)
-            return mrb_bool_value(core->api.key(tic, key));
+            return mrb_bool_value(core->api.key(tic, (tic_key)(key)));
         else
         {
             mrb_raise(mrb, E_ARGUMENT_ERROR, "unknown keyboard code");
@@ -1010,27 +1156,28 @@ static mrb_value mrb_key(mrb_state* mrb, mrb_value self)
 
 static mrb_value mrb_keyp(mrb_state* mrb, mrb_value self)
 {
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
-
+    (void)self;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
     mrb_int key, hold, period;
     mrb_int argc = mrb_get_args(mrb, "|iii", &key, &hold, &period);
 
-    if (argc == 0)
+    if(argc == 0)
     {
-        return mrb_fixnum_value(core->api.keyp(tic, -1, -1, -1));
+        return mrb_fixnum_value(core->api.keyp(tic, (tic_key)-1, -1, -1));
     }
-    else if (key >= tic_key_escape)
+    else if(key >= tic_key_escape)
     {
         mrb_raise(mrb, E_ARGUMENT_ERROR, "unknown keyboard code");
     }
     else if(argc == 1)
     {
-        return mrb_bool_value(core->api.keyp(tic, key, -1, -1));
+        return mrb_bool_value(core->api.keyp(tic, (tic_key)(key), -1, -1));
     }
-    else if (argc == 3)
+    else if(argc == 3)
     {
-        return mrb_bool_value(core->api.keyp(tic, key, hold, period));
+        return mrb_bool_value(core->api.keyp(tic, (tic_key)(key), (s32)(hold), (s32)period));
     }
     else
     {
@@ -1041,15 +1188,17 @@ static mrb_value mrb_keyp(mrb_state* mrb, mrb_value self)
 
 static mrb_value mrb_memcpy(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int dest, src, size;
-    mrb_int argc = mrb_get_args(mrb, "iii", &dest, &src, &size);
+    mrb_get_args(mrb, "iii", &dest, &src, &size);
 
-    s32 bound = sizeof(tic_ram) - size;
+    s32 bound = (s32)(sizeof(tic_ram) - size);
 
-    if(size >= 0 && size <= sizeof(tic_ram) && dest >= 0 && src >= 0 && dest <= bound && src <= bound)
+    if(size >= 0 && size <= (mrb_int)sizeof(tic_ram) && dest >= 0 && src >= 0 && dest <= bound && src <= bound)
     {
-        tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
-        core->api.memcpy(tic, dest, src, size);
+        tic_core* core = getMRubyMachine(mrb);
+        tic_mem* tic = (tic_mem*)core;
+        core->api.memcpy(tic, (s32)(dest), (s32)(src), (s32)size);
     }
     else
     {
@@ -1061,16 +1210,18 @@ static mrb_value mrb_memcpy(mrb_state* mrb, mrb_value self)
 
 static mrb_value mrb_memset(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int dest, value, size;
-    mrb_int argc = mrb_get_args(mrb, "iii", &dest, &value, &size);
+    mrb_get_args(mrb, "iii", &dest, &value, &size);
 
-    s32 bound = sizeof(tic_ram) - size;
+    s32 bound = (s32)(sizeof(tic_ram) - size);
 
-    if(size >= 0 && size <= sizeof(tic_ram) && dest >= 0 && dest <= bound)
+    if(size >= 0 && size <= (mrb_int)sizeof(tic_ram) && dest >= 0 && dest <= bound)
     {
-        tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+        tic_core* core = getMRubyMachine(mrb);
+        tic_mem* tic = (tic_mem*)core;
 
-        core->api.memset(tic, dest, value, size);
+        core->api.memset(tic, (s32)(dest), (u8)value, (s32)size);
     }
     else
     {
@@ -1088,6 +1239,7 @@ static char* mrb_value_to_cstr(mrb_state* mrb, mrb_value value)
 
 static mrb_value mrb_font(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_value text_obj;
     mrb_int x = 0;
     mrb_int y = 0;
@@ -1098,72 +1250,77 @@ static mrb_value mrb_font(mrb_state* mrb, mrb_value self)
     mrb_int scale = 1;
     mrb_bool alt = false;
     mrb_get_args(mrb, "S|iiiiibib",
-            &text_obj, &x, &y, &chromakey,
-            &width, &height, &fixed, &scale, &alt);
+                 &text_obj, &x, &y, &chromakey,
+                 &width, &height, &fixed, &scale, &alt);
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
     if(scale == 0)
         return mrb_fixnum_value(0);
 
     const char* text = mrb_value_to_cstr(mrb, text_obj);
 
-    s32 size = core->api.font(tic, text, x, y, (u8*)&chromakey, 1, width, height, fixed, scale, alt);
+    s32 size = core->api.font(tic, text, (s32)(x), (s32)(y), (u8*)&chromakey, 1, (s32)(width), (s32)(height), fixed, (s32)scale, alt);
     return mrb_fixnum_value(size);
 }
 
 static mrb_value mrb_print(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_value text_obj;
     mrb_int x = 0;
     mrb_int y = 0;
-    mrb_int color = TIC_PALETTE_SIZE-1;
+    mrb_int color = TIC_PALETTE_SIZE - 1;
     mrb_bool fixed = false;
     mrb_int scale = 1;
     mrb_bool alt = false;
     mrb_get_args(mrb, "S|iiibib",
-            &text_obj, &x, &y, &color,
-            &fixed, &scale, &alt);
+                 &text_obj, &x, &y, &color,
+                 &fixed, &scale, &alt);
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
     if(scale == 0)
         return mrb_fixnum_value(0);
 
     const char* text = mrb_str_to_cstr(mrb, text_obj);
 
-    s32 size = core->api.print(tic, text, x, y, color, fixed, scale, alt);
+    s32 size = core->api.print(tic, text, (s32)(x), (s32)(y), (u8)color, fixed, (s32)scale, alt);
     return mrb_fixnum_value(size);
 }
 
-static mrb_value mrb_trace(mrb_state *mrb, mrb_value self)
+static mrb_value mrb_trace(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_value text_obj;
     mrb_int color = TIC_DEFAULT_COLOR;
     mrb_get_args(mrb, "o|i", &text_obj, &color);
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
 
     const char* text = mrb_value_to_cstr(mrb, text_obj);
-    core->data->trace(core->data->data, text, color);
+    core->api.trace((tic_mem*)core, text, (u8)color);
 
     return mrb_nil_value();
 }
 
-static mrb_value mrb_pmem(mrb_state *mrb, mrb_value self)
+static mrb_value mrb_pmem(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_int index, value;
     mrb_int argc = mrb_get_args(mrb, "i|i", &index, &value);
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
 
-    if(index < TIC_PERSISTENT_SIZE)
+    if(index >= 0 && index < (s32)TIC_PERSISTENT_SIZE)
     {
-        u32 val = core->api.pmem((tic_mem*)core, index, 0, false);
+        u32 val = core->api.pmem((tic_mem*)core, (s32)index, 0, false);
 
         if(argc == 2)
         {
-            u32 val = core->api.pmem((tic_mem*)core, index, value, true);
+            core->api.pmem((tic_mem*)core, (s32)index, (u32)value, true);
         }
 
         return mrb_fixnum_value(val);
@@ -1176,22 +1333,26 @@ static mrb_value mrb_pmem(mrb_state *mrb, mrb_value self)
     }
 }
 
-static mrb_value mrb_time(mrb_state *mrb, mrb_value self)
+static mrb_value mrb_time(mrb_state* mrb, mrb_value self)
 {
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    (void)self;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
     return mrb_float_value(mrb, core->api.time(tic));
 }
 
-static mrb_value mrb_exit(mrb_state *mrb, mrb_value self)
+static mrb_value mrb_exit(mrb_state* mrb, mrb_value self)
 {
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
-    core->data->exit(core->data->data);
+    (void)self;
+    tic_core* core = getMRubyMachine(mrb);
+    core->api.exit((tic_mem*)core);
 
     return mrb_nil_value();
 }
 
-static mrb_value mrb_mouse(mrb_state *mrb, mrb_value self)
+static mrb_value mrb_mouse(mrb_state* mrb, mrb_value self)
 {
+    (void)self;
     mrb_value sym_x = mrb_symbol_value(mrb_intern_cstr(mrb, "x"));
     mrb_value sym_y = mrb_symbol_value(mrb_intern_cstr(mrb, "y"));
     mrb_value sym_left = mrb_symbol_value(mrb_intern_cstr(mrb, "left"));
@@ -1200,7 +1361,8 @@ static mrb_value mrb_mouse(mrb_state *mrb, mrb_value self)
     mrb_value sym_scrollx = mrb_symbol_value(mrb_intern_cstr(mrb, "scrollx"));
     mrb_value sym_scrolly = mrb_symbol_value(mrb_intern_cstr(mrb, "scrolly"));
 
-    tic_core* core = getMRubyMachine(mrb); tic_mem* tic = (tic_mem*)core;
+    tic_core* core = getMRubyMachine(mrb);
+    tic_mem* tic = (tic_mem*)core;
 
     tic_point pos = core->api.mouse(tic);
     const tic80_mouse* mouse = &tic->ram->input.mouse;
@@ -1209,9 +1371,9 @@ static mrb_value mrb_mouse(mrb_state *mrb, mrb_value self)
 
     mrb_hash_set(mrb, hash, sym_x, mrb_fixnum_value(pos.x));
     mrb_hash_set(mrb, hash, sym_y, mrb_fixnum_value(pos.y));
-    mrb_hash_set(mrb, hash, sym_left, mrb_bool_value(mouse->left));
-    mrb_hash_set(mrb, hash, sym_middle, mrb_bool_value(mouse->middle));
-    mrb_hash_set(mrb, hash, sym_right, mrb_bool_value(mouse->right));
+    mrb_hash_set(mrb, hash, sym_left, mrb_bool_value((mrb_bool)(mouse->left)));
+    mrb_hash_set(mrb, hash, sym_middle, mrb_bool_value((mrb_bool)(mouse->middle)));
+    mrb_hash_set(mrb, hash, sym_right, mrb_bool_value((mrb_bool)(mouse->right)));
     mrb_hash_set(mrb, hash, sym_scrollx, mrb_fixnum_value(mouse->scrollx));
     mrb_hash_set(mrb, hash, sym_scrolly, mrb_fixnum_value(mouse->scrolly));
 
@@ -1224,7 +1386,7 @@ static void closeMRuby(tic_mem* tic)
 
     if(core->currentVM)
     {
-        mrbVm *currentVM = (mrbVm*)core->currentVM;
+        mrbVm* currentVM = (mrbVm*)core->currentVM;
         mrbc_context_free(currentVM->mrb, currentVM->mrb_cxt);
         mrb_close(currentVM->mrb);
         currentVM->mrb_cxt = NULL;
@@ -1238,11 +1400,11 @@ static void closeMRuby(tic_mem* tic)
 static mrb_bool catcherr(tic_core* core)
 {
     mrb_state* mrb = ((mrbVm*)core->currentVM)->mrb;
-    if (mrb->exc)
+    if(mrb->exc)
     {
         mrb_value ex = mrb_obj_value(mrb->exc);
         mrb_value bt = mrb_exc_backtrace(mrb, ex);
-        if (!mrb_array_p(bt))
+        if(!mrb_array_p(bt))
             bt = mrb_get_backtrace(mrb);
         mrb_value insp = mrb_inspect(mrb, ex);
         mrb_ary_unshift(mrb, bt, insp);
@@ -1266,26 +1428,30 @@ static bool initMRuby(tic_mem* tic, const char* code)
     CurrentMachine = core;
 
     core->currentVM = malloc(sizeof(mrbVm));
-    mrbVm *currentVM = (mrbVm*)core->currentVM;
+    mrbVm* currentVM = (mrbVm*)core->currentVM;
 
     mrb_state* mrb = currentVM->mrb = mrb_open();
     mrbc_context* mrb_cxt = currentVM->mrb_cxt = mrbc_context_new(mrb);
     mrb_cxt->capture_errors = 1;
     mrbc_filename(mrb, mrb_cxt, "user code");
 
-#define API_FUNC_DEF(name, _, __, nparam, nrequired, callback, ...) {mrb_ ## name, nrequired, (nparam - nrequired), callback, #name},
-    static const struct{mrb_func_t func; s32 nrequired; s32 noptional; bool block; const char* name;} ApiItems[] = {TIC_API_LIST(API_FUNC_DEF)};
+#define API_FUNC_DEF(name, _, __, nparam, nrequired, callback, ...) {mrb_##name, nrequired, (nparam - nrequired), callback, #name},
+    static const struct
+    {
+        mrb_func_t func;
+        s32 nrequired;
+        s32 noptional;
+        bool block;
+        const char* name;
+    } ApiItems[] = {TIC_API_LIST(API_FUNC_DEF)};
 #undef API_FUNC_DEF
 
-    for (s32 i = 0; i < COUNT_OF(ApiItems); ++i)
+    for(s32 i = 0; i < COUNT_OF(ApiItems); ++i)
     {
-        mrb_aspec args = MRB_ARGS_NONE();
-        if (ApiItems[i].nrequired > 0)
-            args |= MRB_ARGS_REQ(ApiItems[i].nrequired);
-        if (ApiItems[i].noptional > 0)
-            args |= MRB_ARGS_OPT(ApiItems[i].noptional);
-        if (ApiItems[i].block)
-            args |= MRB_ARGS_BLOCK();
+        // Each binding validates its own arguments: the table's counts are
+        // the C API's, not the script-level defaults (btn(), clip(), vbank()).
+        const bool noargs = ApiItems[i].nrequired == 0 && ApiItems[i].noptional == 0;
+        const mrb_aspec args = noargs ? MRB_ARGS_NONE() : MRB_ARGS_ANY();
 
         mrb_define_method(mrb, mrb->kernel_module, ApiItems[i].name, ApiItems[i].func, args);
     }
@@ -1294,16 +1460,17 @@ static bool initMRuby(tic_mem* tic, const char* code)
     return catcherr(core);
 }
 
-static void evalMRuby(tic_mem* tic, const char* code) {
+static void evalMRuby(tic_mem* tic, const char* code)
+{
     tic_core* core = (tic_core*)tic;
 
-    mrbVm* vm=(mrbVm*)core->currentVM;
+    mrbVm* vm = (mrbVm*)core->currentVM;
     if(!vm || !vm->mrb)
         return;
 
     mrb_state* mrb = vm->mrb;
 
-    if (((mrbVm*)core->currentVM)->mrb_cxt)
+    if(((mrbVm*)core->currentVM)->mrb_cxt)
     {
         mrbc_context_free(mrb, ((mrbVm*)core->currentVM)->mrb_cxt);
     }
@@ -1323,7 +1490,7 @@ static void callMRubyTick(tic_mem* tic)
 
     if(mrb)
     {
-        if (mrb_respond_to(mrb, mrb_top_self(mrb), mrb_intern_cstr(mrb, TicFunc)))
+        if(mrb_respond_to(mrb, mrb_top_self(mrb), mrb_intern_cstr(mrb, TicFunc)))
         {
             int ai = mrb_gc_arena_save(mrb);
             mrb_funcall(mrb, mrb_top_self(mrb), TicFunc, 0);
@@ -1352,7 +1519,7 @@ static void callMRubyBoot(tic_mem* tic)
         core->state.has_bdr = mrb_respond_to(mrb, mrb_top_self(mrb), mrb_intern_cstr(mrb, BDR_FN));
 #endif
 
-        if (mrb_respond_to(mrb, mrb_top_self(mrb), mrb_intern_cstr(mrb, BootFunc)))
+        if(mrb_respond_to(mrb, mrb_top_self(mrb), mrb_intern_cstr(mrb, BootFunc)))
         {
             int ai = mrb_gc_arena_save(mrb);
             mrb_funcall(mrb, mrb_top_self(mrb), BootFunc, 0);
@@ -1364,10 +1531,11 @@ static void callMRubyBoot(tic_mem* tic)
 
 static void callMRubyIntCallback(tic_mem* tic, s32 value, void* data, const char* name)
 {
+    (void)data;
     tic_core* core = (tic_core*)tic;
     mrb_state* mrb = ((mrbVm*)core->currentVM)->mrb;
 
-    if (mrb && mrb_respond_to(mrb, mrb_top_self(mrb), mrb_intern_cstr(mrb, name)))
+    if(mrb && mrb_respond_to(mrb, mrb_top_self(mrb), mrb_intern_cstr(mrb, name)))
     {
         int ai = mrb_gc_arena_save(mrb);
         mrb_funcall(mrb, mrb_top_self(mrb), name, 1, mrb_fixnum_value(value));
@@ -1400,23 +1568,28 @@ static void callMRubyMenu(tic_mem* tic, s32 index, void* data)
  * [Outdated official documentation regarding syntax](https://ruby-doc.org/docs/ruby-doc-bundle/Manual/man-1.4/syntax.html#resword)
  * [Ruby for dummies reserved word listing](https://www.dummies.com/programming/ruby/rubys-reserved-words/)
  */
-static const char* const MRubyKeywords [] =
-{
-    "BEGIN", "class", "ensure", "nil", "self", "when",
-    "END", "def", "false", "not", "super", "while",
-    "alias", "defined", "for", "or", "then", "yield",
-    "and", "do", "if", "redo", "true",
-    "begin", "else", "in", "rescue", "undef",
-    "break", "elsif", "module", "retry", "unless",
-    "case", "end", "next", "return", "until",
-    "__FILE__", "__LINE__"
-};
+static const char* const MRubyKeywords[] =
+    {
+        "BEGIN", "class", "ensure", "nil", "self", "when",
+        "END", "def", "false", "not", "super", "while",
+        "alias", "defined", "for", "or", "then", "yield",
+        "and", "do", "if", "redo", "true",
+        "begin", "else", "in", "rescue", "undef",
+        "break", "elsif", "module", "retry", "unless",
+        "case", "end", "next", "return", "until",
+        "__FILE__", "__LINE__"};
 
-static inline bool isalnum_(char c) {return isalnum(c) || c == '_' || c == '?' || c == '=' || c == '!';}
+static inline bool isalnum_(char c)
+{
+    return isalnum((u8)c) || c == '_' || c == '?' || c == '=' || c == '!';
+}
 
 static const tic_outline_item* getMRubyOutline(const char* code, s32* size)
 {
-    enum{Size = sizeof(tic_outline_item)};
+    enum
+    {
+        Size = sizeof(tic_outline_item)
+    };
 
     *size = 0;
 
@@ -1447,13 +1620,15 @@ static const tic_outline_item* getMRubyOutline(const char* code, s32* size)
             {
                 char c = *ptr;
 
-                if(isalnum_(c));
+                if(isalnum_(c))
+                    ;
                 else if(c == '(' || c == ' ' || c == '\n')
                 {
                     end = ptr;
                     break;
                 }
-                else break;
+                else
+                    break;
 
                 ptr++;
             }
@@ -1468,55 +1643,56 @@ static const tic_outline_item* getMRubyOutline(const char* code, s32* size)
                 (*size)++;
             }
         }
-        else break;
+        else
+            break;
     }
 
     return items;
 }
 
 static const u8 DemoRom[] =
-{
-    #include "../build/assets/rubydemo.tic.dat"
+    {
+#include "../build/assets/rubydemo.tic.dat"
 };
 
 static const u8 MarkRom[] =
-{
-    #include "../build/assets/rubymark.tic.dat"
+    {
+#include "../build/assets/rubymark.tic.dat"
 };
 
 TIC_EXPORT const tic_script EXPORT_SCRIPT(Ruby) =
-{
-    .id                 = 11,
-    .name               = "ruby",
-    .fileExtension      = ".rb",
-    .projectComment     = "#",
-    .init               = initMRuby,
-    .close              = closeMRuby,
-    .tick               = callMRubyTick,
-    .boot               = callMRubyBoot,
-
-    .callback           =
     {
-        .scanline       = callMRubyScanline,
-        .border         = callMRubyBorder,
-        .menu           = callMRubyMenu,
-    },
+        .id = 11,
+        .name = "ruby",
+        .fileExtension = ".rb",
+        .projectComment = "#",
+        .init = initMRuby,
+        .close = closeMRuby,
+        .tick = callMRubyTick,
+        .boot = callMRubyBoot,
 
-    .getOutline         = getMRubyOutline,
-    .eval               = evalMRuby,
+        .callback =
+            {
+                .scanline = callMRubyScanline,
+                .border = callMRubyBorder,
+                .menu = callMRubyMenu,
+            },
 
-    .blockCommentStart  = "=begin",
-    .blockCommentEnd    = "=end",
-    .blockCommentStart2 = NULL,
-    .blockCommentEnd2   = NULL,
-    .singleComment      = "#",
-    .blockStringStart   = NULL,
-    .blockStringEnd     = NULL,
-    .blockEnd           = "end",
+        .getOutline = getMRubyOutline,
+        .eval = evalMRuby,
 
-    .keywords           = MRubyKeywords,
-    .keywordsCount      = COUNT_OF(MRubyKeywords),
+        .blockCommentStart = "=begin",
+        .blockCommentEnd = "=end",
+        .blockCommentStart2 = NULL,
+        .blockCommentEnd2 = NULL,
+        .singleComment = "#",
+        .blockStringStart = NULL,
+        .blockStringEnd = NULL,
+        .blockEnd = "end",
 
-    .demo = {DemoRom, sizeof DemoRom},
-    .mark = {MarkRom, sizeof MarkRom, "rubymark.tic"},
+        .keywords = MRubyKeywords,
+        .keywordsCount = COUNT_OF(MRubyKeywords),
+
+        .demo = {DemoRom, sizeof DemoRom, NULL},
+        .mark = {MarkRom, sizeof MarkRom, "rubymark.tic"},
 };

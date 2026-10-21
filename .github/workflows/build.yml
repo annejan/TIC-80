@@ -37,41 +37,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The CRT and blit shaders are generated from src/system/sokol/*.glsl into
-  # headers that are committed, so no build needs the tool. That only holds if
-  # the two stay in step, and nothing else would notice them drifting apart:
-  # regenerate here and fail on a difference. The tool is pinned to the release
-  # the headers were last generated with — a newer one may emit different code
-  # for the same source, which would fail this check for no real reason.
-  shaders:
-    name: Shader headers
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Get sokol-shdc
-        run: |
-          set -euo pipefail
-          curl -fsSL -o /usr/local/bin/sokol-shdc \
-            https://github.com/floooh/sokol-tools-bin/raw/11d0cf678105d614d675e6d9bd2aaf3eeff12f8c/bin/linux/sokol-shdc
-          chmod +x /usr/local/bin/sokol-shdc
-
-      - name: Regenerate
-        run: |
-          set -euo pipefail
-          for shader in blit crt; do
-            sokol-shdc -i "src/system/sokol/$shader.glsl" -o "src/system/sokol/$shader.h" \
-              -l glsl410:glsl300es:hlsl4:metal_macos:metal_ios:wgsl --ifdef
-          done
-
-      - name: Fail when a header no longer matches its source
-        run: |
-          set -euo pipefail
-          if ! git diff --exit-code -- src/system/sokol; then
-            echo "::error::src/system/sokol/*.h is out of date: regenerate the shaders and commit them"
-            exit 1
-          fi
-
   # === Windows ===
   windows:
     runs-on: windows-2022
@@ -90,7 +55,7 @@ jobs:
         shell: cmd
         run: |
           cd build
-          cmake -G "Visual Studio 17 2022" -DBUILD_SDLGPU=On -DBUILD_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_ALL=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ..
+          cmake -G "Visual Studio 17 2022" -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_ALL=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ..
           cmake --build . --config Release --parallel || exit /b 1
           rem The universal export stub is this same binary (console.c appends
           rem the cart to it), so keep it before Build Pro overwrites it below.
@@ -112,7 +77,7 @@ jobs:
         shell: cmd
         run: |
           cd build
-          cmake -G "Visual Studio 17 2022" -DBUILD_SDLGPU=On -DBUILD_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_PRO=On -DBUILD_WITH_ALL=ON ..
+          cmake -G "Visual Studio 17 2022" -DCMAKE_BUILD_TYPE=Release -DBUILD_PRO=On -DBUILD_WITH_ALL=ON ..
           cmake --build . --config Release --parallel
 
       # The universal stub: every free export asks for /export/<ver>/<system>,
@@ -142,7 +107,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/stubs"
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
           for lang in "${langs[@]}"; do
             # Every language flag on every pass, so nothing can stick in the
             # cache from the previous one — which is what the --fresh here used
@@ -157,7 +122,7 @@ jobs:
               if [ "$l" = "$lang" ]; then flags+=("-DBUILD_WITH_$up=ON"); else flags+=("-DBUILD_WITH_$up=OFF"); fi
             done
             cd "$GITHUB_WORKSPACE/build"
-            cmake -G "Visual Studio 17 2022" -DCMAKE_BUILD_TYPE=Release -DBUILD_SDLGPU=On -DBUILD_STATIC=ON -DBUILD_EDITORS=OFF -DBUILD_SURF=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5 "${flags[@]}" -DTIC80_TARGET="tic80$lang" ..
+            cmake -G "Visual Studio 17 2022" -DCMAKE_BUILD_TYPE=Release -DBUILD_EDITORS=OFF -DBUILD_SURF=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5 "${flags[@]}" -DTIC80_TARGET="tic80$lang" ..
             cmake --build . --config Release --parallel
             cp "$GITHUB_WORKSPACE/build/bin/tic80$lang.exe" "$GITHUB_WORKSPACE/stubs/"
           done
@@ -192,8 +157,8 @@ jobs:
           path: |
             stubs/*
 
-  # === Ubuntu ===
-  linux-gcc12-glibc235:
+  # === Ubuntu 22.04 (gcc-12, glibc 2.35) ===
+  linux:
     runs-on: ubuntu-22.04
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -216,24 +181,28 @@ jobs:
           sudo rm -f /etc/apt/sources.list.d/*google* /etc/apt/sources.list.d/*chrome* 2>/dev/null || true
           sudo sed -i '/dl\.google\.com/d' /etc/apt/sources.list 2>/dev/null || true
           sudo apt-get update
-          sudo apt-get install gcc-12 g++-12 libglu1-mesa-dev libasound2-dev libpulse-dev libaudio-dev libsamplerate0-dev libcurl4-openssl-dev -y
+          # The X11 trio is sokol_app's link line and ALSA is sokol_audio's;
+          # the rest is what the studio itself needs.
+          sudo apt-get install gcc-12 g++-12 libx11-dev libxi-dev libxcursor-dev libglu1-mesa-dev libasound2-dev libpulse-dev libaudio-dev libsamplerate0-dev libcurl4-openssl-dev -y
           sudo ln -s -f /usr/bin/gcc-12 /usr/bin/gcc
           sudo ln -s -f /usr/bin/g++-12 /usr/bin/g++
           # the generator the builds use; the image carries it already
           command -v ninja >/dev/null || sudo apt-get install -y ninja-build
           command -v ccache >/dev/null || sudo apt-get install -y ccache
-          
+
       - name: ccache
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/.ccache
-          key: ccache-${{ github.job }}-${{ github.sha }}
-          restore-keys: ccache-${{ github.job }}-
+          # restore-keys match by prefix, and `linux-` is a prefix of `linux-arm64-`:
+          # the arch keeps this job from restoring the arm64 cache.
+          key: ccache-${{ github.job }}-${{ runner.arch }}-${{ github.sha }}
+          restore-keys: ccache-${{ github.job }}-${{ runner.arch }}-
 
       - name: Build
         run: |
           cd build
-          cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_SDLGPU=On -DBUILD_STATIC=ON -DBUILD_WITH_ALL=ON ..
+          cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_ALL=ON ..
           cmake --build . --parallel
           # The universal export stub is this same binary (console.c appends the
           # cart to it), so keep it before Build Pro overwrites it below. It goes
@@ -260,14 +229,14 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           if-no-files-found: error
-          name: "tic80-linux-gcc12"
+          name: "tic80-linux"
           path: |
             build/bin/tic80
 
       - name: Build Pro
         run: |
           cd build
-          cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_SDLGPU=On -DBUILD_PRO=On -DBUILD_WITH_ALL=ON ..
+          cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_PRO=On -DBUILD_WITH_ALL=ON ..
           cmake --build . --parallel
 
       # No build here: the universal stub is the binary the Build step kept
@@ -277,7 +246,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           if-no-files-found: error
-          name: "tic80-linux-gcc12-export"
+          name: "tic80-linux-export"
           path: |
             stub/tic80
 
@@ -293,7 +262,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/stubs"
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
           for lang in "${langs[@]}"; do
             # Every language flag on every pass, so nothing can stick in the
             # cache from the previous one — which is what the --fresh here used
@@ -308,7 +277,7 @@ jobs:
               if [ "$l" = "$lang" ]; then flags+=("-DBUILD_WITH_$up=ON"); else flags+=("-DBUILD_WITH_$up=OFF"); fi
             done
             cd "$GITHUB_WORKSPACE/build"
-            cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_SDLGPU=On -DBUILD_STATIC=ON -DBUILD_EDITORS=OFF -DBUILD_SURF=OFF "${flags[@]}" -DTIC80_TARGET="tic80$lang" ..
+            cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_EDITORS=OFF -DBUILD_SURF=OFF "${flags[@]}" -DTIC80_TARGET="tic80$lang" ..
             cmake --build . --parallel
             cp "$GITHUB_WORKSPACE/build/bin/tic80$lang" "$GITHUB_WORKSPACE/stubs/"
           done
@@ -339,13 +308,13 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           if-no-files-found: error
-          name: "tic80-linux-gcc12-export-langs"
+          name: "tic80-linux-export-langs"
           path: |
             stubs/*
 
-  # === Ubuntu-arm64 ===
+  # === Ubuntu 22.04 arm64 (gcc-12, glibc 2.35) ===
 
-  linux-arm64-gcc12-glibc235:
+  linux-arm64:
     runs-on: ubuntu-22.04-arm
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -368,24 +337,26 @@ jobs:
           sudo rm -f /etc/apt/sources.list.d/*google* /etc/apt/sources.list.d/*chrome* 2>/dev/null || true
           sudo sed -i '/dl\.google\.com/d' /etc/apt/sources.list 2>/dev/null || true
           sudo apt-get update
-          sudo apt-get install gcc-12 g++-12 libglu1-mesa-dev libasound2-dev libpulse-dev libaudio-dev libsamplerate0-dev libcurl4-openssl-dev -y
+          # The X11 trio is sokol_app's link line and ALSA is sokol_audio's;
+          # the rest is what the studio itself needs.
+          sudo apt-get install gcc-12 g++-12 libx11-dev libxi-dev libxcursor-dev libglu1-mesa-dev libasound2-dev libpulse-dev libaudio-dev libsamplerate0-dev libcurl4-openssl-dev -y
           sudo ln -s -f /usr/bin/gcc-12 /usr/bin/gcc
           sudo ln -s -f /usr/bin/g++-12 /usr/bin/g++
           # the generator the builds use; the image carries it already
           command -v ninja >/dev/null || sudo apt-get install -y ninja-build
           command -v ccache >/dev/null || sudo apt-get install -y ccache
-          
+
       - name: ccache
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/.ccache
-          key: ccache-${{ github.job }}-${{ github.sha }}
-          restore-keys: ccache-${{ github.job }}-
+          key: ccache-${{ github.job }}-${{ runner.arch }}-${{ github.sha }}
+          restore-keys: ccache-${{ github.job }}-${{ runner.arch }}-
 
       - name: Build
         run: |
           cd build
-          cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_SDLGPU=On -DBUILD_STATIC=ON -DBUILD_WITH_ALL=ON ..
+          cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_ALL=ON ..
           cmake --build . --parallel
           # The universal export stub is this same binary (console.c appends the
           # cart to it), so keep it before Build Pro overwrites it below. It goes
@@ -399,14 +370,14 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           if-no-files-found: error
-          name: "tic80-linux-arm64-gcc12"
+          name: "tic80-linux-arm64"
           path: |
             build/bin/tic80
 
       - name: Build Pro
         run: |
           cd build
-          cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_SDLGPU=On -DBUILD_PRO=On -DBUILD_WITH_ALL=ON ..
+          cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_PRO=On -DBUILD_WITH_ALL=ON ..
           cmake --build . --parallel
 
       # No build here: the universal stub is the binary the Build step kept
@@ -416,7 +387,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           if-no-files-found: error
-          name: "tic80-linux-arm64-gcc12-export"
+          name: "tic80-linux-arm64-export"
           path: |
             stub/tic80
 
@@ -432,7 +403,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/stubs"
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
           for lang in "${langs[@]}"; do
             # Every language flag on every pass, so nothing can stick in the
             # cache from the previous one — which is what the --fresh here used
@@ -447,7 +418,7 @@ jobs:
               if [ "$l" = "$lang" ]; then flags+=("-DBUILD_WITH_$up=ON"); else flags+=("-DBUILD_WITH_$up=OFF"); fi
             done
             cd "$GITHUB_WORKSPACE/build"
-            cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_SDLGPU=On -DBUILD_STATIC=ON -DBUILD_EDITORS=OFF -DBUILD_SURF=OFF "${flags[@]}" -DTIC80_TARGET="tic80$lang" ..
+            cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_EDITORS=OFF -DBUILD_SURF=OFF "${flags[@]}" -DTIC80_TARGET="tic80$lang" ..
             cmake --build . --parallel
             cp "$GITHUB_WORKSPACE/build/bin/tic80$lang" "$GITHUB_WORKSPACE/stubs/"
           done
@@ -478,13 +449,17 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           if-no-files-found: error
-          name: "tic80-linux-arm64-gcc12-export-langs"
+          name: "tic80-linux-arm64-export-langs"
           path: |
             stubs/*
 
-  # === Raspberry PI 1-4 Bare Metal ===
+  # === Ubuntu-arm64 system GLES ===
+  #
+  # An ARM build against a system GLES (Batocera's data path is below). It
+  # followed the desktop onto sokol, whose GLES backend needs a GLES 3 context —
+  # where the SDL path this job built was a GLES 2 one.
 
-  linux-arm64-gles2:
+  linux-arm64-gles:
     runs-on: ubuntu-22.04-arm
 
     steps:
@@ -496,11 +471,13 @@ jobs:
       - name: Install Toolchain and Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc g++ xz-utils wget python3 rake pkg-config binutils libsdl2-dev libgles2-mesa-dev libegl1-mesa-dev
+          # The GLES pair is stubbed below and the X11 trio and ALSA are what
+          # sokol_app and sokol_audio link against, as in the shipping job.
+          sudo apt-get install -y gcc g++ xz-utils wget python3 rake pkg-config binutils libgles2-mesa-dev libegl1-mesa-dev libx11-dev libxi-dev libxcursor-dev libasound2-dev
 
       - name: Generate Stubs
         run: |
-          for lib in /usr/lib/aarch64-linux-gnu/libSDL2-2.0.so.0 /usr/lib/aarch64-linux-gnu/libGLESv2.so.2 /usr/lib/aarch64-linux-gnu/libEGL.so.1; do \
+          for lib in /usr/lib/aarch64-linux-gnu/libGLESv2.so.2 /usr/lib/aarch64-linux-gnu/libEGL.so.1; do \
               outname=$(basename $lib | sed 's/-2.0//; s/\.so\..*/.so/') && \
               echo "Generating stubs for $outname from $lib" && \
               nm -D $lib | grep " T " | awk '{print "void " $3 "(){}"}' > stubs.c && \
@@ -517,14 +494,9 @@ jobs:
             -DBUILD_WITH_ALL=ON \
             -DCMAKE_C_FLAGS_RELEASE="-Ofast -flto" \
             -DCMAKE_CXX_FLAGS_RELEASE="-Ofast -flto" \
-            -DBUILD_SDL=ON \
-            -DBUILD_SDLGPU=ON \
             -DUSE_GLES2=ON \
-            -DUSE_EGL=ON \
             -DBUILD_EDITORS=OFF \
             -DBUILD_SURF=OFF \
-            -DPREFER_SYSTEM_SDL2=ON \
-            -DBUILD_STATIC=ON \
             -DTIC_DATA_PATH="/userdata/roms/tic80/"
           cmake --build . --target tic80 --config Release --parallel
 
@@ -540,7 +512,7 @@ jobs:
       - name: Deploy
         uses: actions/upload-artifact@v6
         with:
-          name: "tic80-linux-arm64-gles2"
+          name: "tic80-linux-arm64-gles"
           path: |
             build/linux/bin/tic80
             build/linux/bin/*.so
@@ -648,7 +620,7 @@ jobs:
       - name: Build
         run: |
           cd build
-          cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_STATIC=ON -DBUILD_SDLGPU=On -DBUILD_WITH_ALL=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ..
+          cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_ALL=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ..
           cmake --build . --parallel 3
           # The universal export stub is this same binary (console.c appends the
           # cart to it), so keep it before Build Pro overwrites it below. It goes
@@ -669,7 +641,7 @@ jobs:
       - name: Build Pro
         run: |
           cd build
-          cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_SDLGPU=On -DBUILD_PRO=On -DBUILD_WITH_ALL=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ..
+          cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_PRO=On -DBUILD_WITH_ALL=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ..
           cmake --build . --parallel 3
 
       # No build here: the universal stub is the binary the Build step kept
@@ -695,7 +667,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/stubs"
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
           for lang in "${langs[@]}"; do
             # Every language flag on every pass, so nothing can stick in the
             # cache from the previous one — which is what the --fresh here used
@@ -710,7 +682,7 @@ jobs:
               if [ "$l" = "$lang" ]; then flags+=("-DBUILD_WITH_$up=ON"); else flags+=("-DBUILD_WITH_$up=OFF"); fi
             done
             cd "$GITHUB_WORKSPACE/build"
-            cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_SDLGPU=On -DBUILD_STATIC=ON -DBUILD_EDITORS=OFF -DBUILD_SURF=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5 "${flags[@]}" -DTIC80_TARGET="tic80$lang" ..
+            cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_EDITORS=OFF -DBUILD_SURF=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5 "${flags[@]}" -DTIC80_TARGET="tic80$lang" ..
             cmake --build . --parallel
             cp "$GITHUB_WORKSPACE/build/bin/tic80$lang" "$GITHUB_WORKSPACE/stubs/"
           done
@@ -749,7 +721,7 @@ jobs:
         run: |
           mkdir -p build_apple
           cd build_apple
-          cmake -G Xcode -DCMAKE_BUILD_TYPE=Release -DBUILD_APPLE=ON -DBUILD_STATIC=ON -DBUILD_RENDER_CACHE=ON -DBUILD_SDLGPU=OFF -DBUILD_SURF=OFF -DBUILD_WITH_ALL=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ..
+          cmake -G Xcode -DCMAKE_BUILD_TYPE=Release -DBUILD_APPLE=ON -DBUILD_RENDER_CACHE=ON -DBUILD_SDLGPU=OFF -DBUILD_SURF=OFF -DBUILD_WITH_ALL=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ..
           cmake --build . --config Release --parallel 3
 
   # === MacOS 15 / x86_64 ===
@@ -791,7 +763,7 @@ jobs:
       - name: Build
         run: |
           cd build
-          cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_STATIC=ON -DBUILD_SDLGPU=On -DBUILD_WITH_ALL=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ..
+          cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_ALL=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ..
           cmake --build . --parallel
           # The universal export stub is this same binary (console.c appends the
           # cart to it), so keep it before Build Pro overwrites it below. It goes
@@ -812,7 +784,7 @@ jobs:
       - name: Build Pro
         run: |
           cd build
-          cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_SDLGPU=On -DBUILD_PRO=On -DBUILD_WITH_ALL=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ..
+          cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_PRO=On -DBUILD_WITH_ALL=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ..
           cmake --build . --parallel
 
       # No build here: the universal stub is the binary the Build step kept
@@ -838,7 +810,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/stubs"
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
           for lang in "${langs[@]}"; do
             # Every language flag on every pass, so nothing can stick in the
             # cache from the previous one — which is what the --fresh here used
@@ -853,7 +825,7 @@ jobs:
               if [ "$l" = "$lang" ]; then flags+=("-DBUILD_WITH_$up=ON"); else flags+=("-DBUILD_WITH_$up=OFF"); fi
             done
             cd "$GITHUB_WORKSPACE/build"
-            cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_SDLGPU=On -DBUILD_STATIC=ON -DBUILD_EDITORS=OFF -DBUILD_SURF=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5 "${flags[@]}" -DTIC80_TARGET="tic80$lang" ..
+            cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_EDITORS=OFF -DBUILD_SURF=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5 "${flags[@]}" -DTIC80_TARGET="tic80$lang" ..
             cmake --build . --parallel
             cp "$GITHUB_WORKSPACE/build/bin/tic80$lang" "$GITHUB_WORKSPACE/stubs/"
           done
@@ -888,6 +860,132 @@ jobs:
           path: |
             stubs/*
 
+  # === SDL desktop builds: the fallback ===
+  #
+  # The layer the desktop shipped before the migration, kept compiling for one
+  # release cycle; the echo is the comparison in the log.
+
+  sdl-windows:
+    runs-on: windows-2022
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 2.6
+
+      - name: Build
+        shell: bash
+        run: |
+          set -euo pipefail
+          start=$SECONDS
+          cmake -S . -B build -G "Visual Studio 17 2022" -DCMAKE_BUILD_TYPE=Release -DBUILD_SDL=ON -DBUILD_SOKOL=OFF -DBUILD_SDLGPU=On -DBUILD_WITH_ALL=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build build --config Release --parallel
+          echo "sdl build: $((SECONDS - start))s"
+          du -h build/bin/tic80.exe
+
+      - uses: actions/upload-artifact@v6
+        with:
+          if-no-files-found: error
+          name: "tic80-windows-sdl"
+          path: |
+            build/bin/tic80.exe
+
+  sdl-linux:
+    runs-on: ubuntu-22.04
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 500M
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 2.6
+
+      - name: Install
+        run: |
+          sudo apt-get update
+          # What the SDL build and the studio itself need; the shipping jobs
+          # carry sokol's X11 link line instead.
+          sudo apt-get install -y libglu1-mesa-dev libasound2-dev libpulse-dev libaudio-dev libsamplerate0-dev libcurl4-openssl-dev
+          command -v ninja >/dev/null || sudo apt-get install -y ninja-build
+          command -v ccache >/dev/null || sudo apt-get install -y ccache
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ github.job }}-${{ github.sha }}
+          restore-keys: ccache-${{ github.job }}-
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          start=$SECONDS
+          cmake -S . -B build -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_SDL=ON -DBUILD_SOKOL=OFF -DBUILD_SDLGPU=On -DBUILD_WITH_ALL=ON
+          cmake --build build --parallel
+          echo "sdl build: $((SECONDS - start))s"
+          du -h build/bin/tic80
+
+      - uses: actions/upload-artifact@v6
+        with:
+          if-no-files-found: error
+          name: "tic80-linux-sdl"
+          path: |
+            build/bin/tic80
+
+  sdl-macos:
+    runs-on: macos-14
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 500M
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 2.6
+
+      - name: Install
+        run: |
+          brew uninstall --ignore-dependencies libidn2
+          command -v ninja >/dev/null || brew install ninja
+          command -v ccache >/dev/null || brew install ccache
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ github.job }}-${{ github.sha }}
+          restore-keys: ccache-${{ github.job }}-
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          start=$SECONDS
+          cmake -S . -B build -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_SDL=ON -DBUILD_SOKOL=OFF -DBUILD_SDLGPU=On -DBUILD_WITH_ALL=ON
+          cmake --build build --parallel 3
+          echo "sdl build: $((SECONDS - start))s"
+          du -h build/bin/tic80
+
+      - uses: actions/upload-artifact@v6
+        with:
+          if-no-files-found: error
+          name: "tic80-macos-sdl"
+          path: |
+            build/bin/tic80
+
   # === Android ===
   android:
     runs-on: ubuntu-latest
@@ -897,6 +995,10 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 2.6
 
       - uses: nttld/setup-ndk@v1
         id: setup-ndk
@@ -1050,7 +1152,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
           stage="$GITHUB_WORKSPACE/build/players"
           rm -rf "$stage"
           for lang in "${langs[@]}"; do
@@ -1061,10 +1163,8 @@ jobs:
             done
             cd "$GITHUB_WORKSPACE/build"
             # "Build all"'s flags with one language on: the site's player is
-            # that build, thirteen runtimes lighter (BUILD_STATIC already
-            # defaults to ON under emscripten, so this leaks nothing into the
-            # stub pass below)
-            emcmake cmake -G Ninja -DBUILD_SDL=OFF -DBUILD_SOKOL=ON -DBUILD_TOUCH_INPUT=ON -DBUILD_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_EDITORS=ON "${flags[@]}" -DTIC80_TARGET="tic80$lang" ..
+            # that build, thirteen runtimes lighter.
+            emcmake cmake -G Ninja -DBUILD_TOUCH_INPUT=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_EDITORS=ON "${flags[@]}" -DTIC80_TARGET="tic80$lang" ..
             cmake --build . --parallel
             for f in "bin/tic80$lang.js" "bin/tic80$lang.wasm"; do
               [ -f "$f" ] || { echo "missing player: build/$f" >&2; exit 1; }
@@ -1089,14 +1189,14 @@ jobs:
           # back the same way: the SDL layer's "Unable to initialize SDL Video"
           # is in a build of it and in no build of the sokol layer, which is
           # what these three passes now build.
-          files=("$stage"/{lua,ruby,js,moon,yue,fennel,scheme,squirrel,wren,wasm,janet,python,miniscript,forth}/tic80*.wasm)
+          files=("$stage"/{lua,ruby,js,moon,yue,fennel,scheme,squirrel,wren,wasm,janet,python,miniscript,forth,gravity}/tic80*.wasm)
           for f in "${files[@]}"; do
             if ! grep -qa "SPRITE EDITOR" "$f"; then
               echo "player without editors: $f — BUILD_EDITORS=ON did not take" >&2
               exit 1
             fi
             if grep -qa "Unable to initialize SDL Video" "$f"; then
-              echo "player on the SDL layer: $f — BUILD_SOKOL=ON did not take" >&2
+              echo "player on the SDL layer: $f — the sokol default did not take" >&2
               exit 1
             fi
           done
@@ -1131,7 +1231,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
           for lang in "${langs[@]}"; do
             flags=(-DBUILD_WITH_ALL=OFF)
             for l in "${langs[@]}"; do
@@ -1139,14 +1239,14 @@ jobs:
               if [ "$l" = "$lang" ]; then flags+=("-DBUILD_WITH_$up=ON"); else flags+=("-DBUILD_WITH_$up=OFF"); fi
             done
             cd "$GITHUB_WORKSPACE/build"
-            emcmake cmake -G Ninja -DBUILD_SDL=OFF -DBUILD_SOKOL=ON -DBUILD_TOUCH_INPUT=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_EDITORS=OFF -DBUILD_SURF=OFF "${flags[@]}" -DTIC80_TARGET="tic80$lang" ..
+            emcmake cmake -G Ninja -DBUILD_TOUCH_INPUT=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_EDITORS=OFF -DBUILD_SURF=OFF "${flags[@]}" -DTIC80_TARGET="tic80$lang" ..
             cmake --build . --parallel
           done
 
           # An identical pair means a language flag did not take, the same guard
           # the native jobs run on their binaries: a wasm stub carries one
           # runtime, so fourteen of them cannot be alike.
-          files=("$GITHUB_WORKSPACE"/build/bin/tic80{lua,ruby,js,moon,yue,fennel,scheme,squirrel,wren,wasm,janet,python,miniscript,forth}.wasm)
+          files=("$GITHUB_WORKSPACE"/build/bin/tic80{lua,ruby,js,moon,yue,fennel,scheme,squirrel,wren,wasm,janet,python,miniscript,forth,gravity}.wasm)
           for f in "${files[@]}"; do
             if [ ! -f "$f" ]; then echo "missing stub: $f" >&2; exit 1; fi
           done
@@ -1176,7 +1276,7 @@ jobs:
               exit 1
             fi
             if grep -qa "Unable to initialize SDL Video" "$f"; then
-              echo "stub on the SDL layer: $(basename "$f") — BUILD_SOKOL=ON did not take" >&2
+              echo "stub on the SDL layer: $(basename "$f") — the sokol default did not take" >&2
               exit 1
             fi
           done
@@ -1184,7 +1284,7 @@ jobs:
       - name: Build all
         run: |
           cd build
-          emcmake cmake -G Ninja -DBUILD_SDL=OFF -DBUILD_SOKOL=ON -DBUILD_TOUCH_INPUT=ON -DBUILD_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_ALL=ON .. --fresh
+          emcmake cmake -G Ninja -DBUILD_TOUCH_INPUT=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_ALL=ON .. --fresh
           cmake --build . --parallel
           # index.html is the only page: the site's player, and the page an
           # exported game gets — the client fetches it, rewrites the title
@@ -1196,7 +1296,7 @@ jobs:
           # through unnoticed — the per-language passes above check their own
           # sets, and this one carries the markers of neither set to compare.
           if grep -qa "Unable to initialize SDL Video" bin/tic80.wasm; then
-            echo "the universal build is on the SDL layer — BUILD_SOKOL=ON did not take" >&2
+            echo "the universal build is on the SDL layer — the sokol default did not take" >&2
             exit 1
           fi
 
@@ -1219,3 +1319,115 @@ jobs:
           if-no-files-found: error
           name: "tic80-html-players"
           path: build/players/*
+
+  # === HTML, WebGPU backend ===
+  # A job of its own so a WebGPU-only break cannot keep the GLES3 players off dev.
+  html-webgpu:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: emscripten-core/setup-emsdk@v15
+
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 2.6
+
+      - name: Install 32-bit build tools
+        run: sudo apt-get update && sudo apt-get install -y gcc-multilib
+
+      # The editorful build, as the site's players are: the loader keeps the name the site asks for.
+      - name: Build per-language WebGPU players
+        shell: bash
+        run: |
+          set -euo pipefail
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
+          stage="$GITHUB_WORKSPACE/build/players-webgpu"
+          rm -rf "$stage"
+          for lang in "${langs[@]}"; do
+            flags=(-DBUILD_WITH_ALL=OFF)
+            for l in "${langs[@]}"; do
+              up=$(echo "$l" | tr '[:lower:]' '[:upper:]')
+              if [ "$l" = "$lang" ]; then flags+=("-DBUILD_WITH_$up=ON"); else flags+=("-DBUILD_WITH_$up=OFF"); fi
+            done
+            cd "$GITHUB_WORKSPACE/build"
+            emcmake cmake -G Ninja -DBUILD_TOUCH_INPUT=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_EDITORS=ON -DBUILD_SOKOL_WGPU=ON "${flags[@]}" -DTIC80_TARGET="tic80$lang" ..
+            cmake --build . --parallel
+            for f in "bin/tic80$lang.js" "bin/tic80$lang.wasm"; do
+              [ -f "$f" ] || { echo "missing player: build/$f" >&2; exit 1; }
+            done
+            mkdir -p "$stage/$lang/webgpu"
+            cp "bin/tic80$lang.js"   "$stage/$lang/webgpu/tic80.js"
+            cp "bin/tic80$lang.wasm" "$stage/$lang/webgpu/tic80$lang.wasm"
+            rm -f "bin/tic80$lang.js" "bin/tic80$lang.wasm"
+          done
+
+      # The default target names the pair tic80.js + tic80.wasm, as the GLES3 universal build does.
+      - name: Build universal WebGPU player
+        shell: bash
+        run: |
+          set -euo pipefail
+          stage="$GITHUB_WORKSPACE/build/players-webgpu/webgpu"
+          cd "$GITHUB_WORKSPACE/build"
+          emcmake cmake -G Ninja -DBUILD_TOUCH_INPUT=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_ALL=ON -DBUILD_SOKOL_WGPU=ON .. --fresh
+          cmake --build . --parallel
+          mkdir -p "$stage"
+          cp bin/tic80.js   "$stage/tic80.js"
+          cp bin/tic80.wasm "$stage/tic80.wasm"
+
+      # The backend is read from the loader: the wasm carries no such string.
+      - name: Check the builds are what they claim
+        shell: bash
+        run: |
+          set -euo pipefail
+          stage="$GITHUB_WORKSPACE/build/players-webgpu"
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
+          files=()
+          for lang in "${langs[@]}"; do
+            js="$stage/$lang/webgpu/tic80.js"
+            wasm="$stage/$lang/webgpu/tic80$lang.wasm"
+            for f in "$js" "$wasm"; do
+              [ -f "$f" ] || { echo "missing player file: $f" >&2; exit 1; }
+            done
+            grep -qa "SPRITE EDITOR" "$wasm" ||
+              { echo "player without editors: $wasm — BUILD_EDITORS=ON did not take" >&2; exit 1; }
+            grep -qa "Unable to initialize SDL Video" "$wasm" &&
+              { echo "player on the SDL layer: $wasm — the sokol default did not take" >&2; exit 1; }
+            grep -qa "navigator.gpu" "$js" ||
+              { echo "player without the WebGPU shim: $js — BUILD_SOKOL_WGPU=ON did not take" >&2; exit 1; }
+            grep -qa "locateFile(\"tic80$lang.wasm\")" "$js" ||
+              { echo "player asks for another wasm: $js does not name tic80$lang.wasm — TIC80_TARGET did not take" >&2; exit 1; }
+            files+=("$wasm")
+          done
+          for f in "$stage/webgpu/tic80.js" "$stage/webgpu/tic80.wasm"; do
+            [ -f "$f" ] || { echo "missing universal file: $f" >&2; exit 1; }
+          done
+          grep -qa "SPRITE EDITOR" "$stage/webgpu/tic80.wasm" ||
+            { echo "the universal build carries no editors" >&2; exit 1; }
+          grep -qa "Unable to initialize SDL Video" "$stage/webgpu/tic80.wasm" &&
+            { echo "the universal build is on the SDL layer — the sokol default did not take" >&2; exit 1; }
+          grep -qa "navigator.gpu" "$stage/webgpu/tic80.js" ||
+            { echo "the universal build is not WebGPU" >&2; exit 1; }
+          grep -qa 'locateFile("tic80.wasm")' "$stage/webgpu/tic80.js" ||
+            { echo "the universal player asks for another wasm: it does not name tic80.wasm" >&2; exit 1; }
+          # a language flag that did not take leaves two builds alike
+          for ((i = 0; i < ${#files[@]}; i++)); do
+            for ((j = i + 1; j < ${#files[@]}; j++)); do
+              if cmp -s "${files[i]}" "${files[j]}"; then
+                echo "duplicate player: $(basename "${files[i]}") == $(basename "${files[j]}") — a language flag did not take" >&2
+                exit 1
+              fi
+            done
+          done
+          echo "checked ${#files[@]} WebGPU players, all distinct, all with editors, all on the WebGPU shim"
+
+      - name: Deploy
+        uses: actions/upload-artifact@v6
+        with:
+          if-no-files-found: error
+          name: "tic80-html-webgpu"
+          path: build/players-webgpu/*

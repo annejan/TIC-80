@@ -9,10 +9,23 @@ set(TIC80STUDIO_SRC
     ${TIC80LIB_DIR}/studio/screens/mainmenu.c
     ${TIC80LIB_DIR}/studio/screens/start.c
     ${TIC80LIB_DIR}/studio/studio.c
-    # The strip, and the three drawing helpers it hosts for every build: the
-    # strip's own widgets are editors-only, but menu.c and the panels below it
-    # reach those helpers too.
-    ${TIC80LIB_DIR}/studio/toolbar.c
+    # The state of a launch that came with a cart: every build boots, so this
+    # is not editors-only.
+    ${TIC80LIB_DIR}/studio/boot.c
+    # The cart an app image carries, which `export game` writes and the launch
+    # reads: bytes and the core's zipper, with no studio in it.
+    ${TIC80LIB_DIR}/studio/embed.c
+    # The sound the studio plays, which the menus, the splash and the panels all
+    # reach: every build has a reason to hear it.
+    ${TIC80LIB_DIR}/studio/sound.c
+    # The icon and the cursor every screen draws with: the menu needs both in
+    # builds that have no strip and never will.
+    ${TIC80LIB_DIR}/studio/ui.c
+    # What the machine's keyboard says, which the editors and the console ask
+    # about more than any other one thing.
+    ${TIC80LIB_DIR}/studio/keyboard.c
+    # The pointer and the buttons, beside the state mouse.h already declared.
+    ${TIC80LIB_DIR}/studio/mouse.c
     ${TIC80LIB_DIR}/studio/rom.c
     ${TIC80LIB_DIR}/studio/config.c
     ${TIC80LIB_DIR}/studio/fs.c
@@ -37,6 +50,8 @@ endif()
 
 if(BUILD_EDITORS)
     set(TIC80STUDIO_SRC ${TIC80STUDIO_SRC}
+        # The strip is the editors' band: a build without them never draws it.
+        ${TIC80LIB_DIR}/studio/toolbar.c
         ${TIC80LIB_DIR}/studio/screens/console.c
         ${TIC80LIB_DIR}/studio/editors/code.c
         ${TIC80LIB_DIR}/studio/editors/sprite.c

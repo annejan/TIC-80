@@ -21,6 +21,7 @@
 // SOFTWARE.
 
 #include "tools.h"
+#include "script.h"
 
 #include <ctype.h>
 #include <string.h>
@@ -65,18 +66,18 @@ void tic_tool_set_pattern_id(tic_track* track, s32 frame, s32 channel, s32 patte
 
 u32 tic_nearest_color(const tic_rgb* palette, const tic_rgb* color, s32 count)
 {
-    u32 min = -1;
-    s32 nearest, i = 0;
+    u32 min = (u32)-1;
+    s32 nearest = 0, i = 0;
 
     for(const tic_rgb *rgb = palette, *end = rgb + count; rgb < end; rgb++, i++)
     {
         s32 d[] = {color->r - rgb->r, color->g - rgb->g, color->b - rgb->b};
 
         u32 dst = 0;
-        for(const s32 *v = d, *end = v + COUNT_OF(d); v < end; v++)
+        for(const s32 *v = d, *dEnd = v + COUNT_OF(d); v < dEnd; v++)
             dst += (*v) * (*v);
 
-        if (dst < min)
+        if(dst < min)
         {
             min = dst;
             nearest = i;
@@ -96,7 +97,8 @@ tic_blitpal tic_tool_palette_blit(const tic_palette* srcpal, tic80_pixel_color_f
 
     while(src != end)
     {
-        switch(fmt){
+        switch(fmt)
+        {
             case TIC80_PIXEL_COLOR_BGRA8888:
                 *dst++ = src->b;
                 *dst++ = src->g;
@@ -133,6 +135,62 @@ bool tic_tool_has_ext(const char* name, const char* ext)
     return strcmp(name + strlen(name) - strlen(ext), ext) == 0;
 }
 
+const char* tic_tool_cart_name(const char* name)
+{
+    static char path[TICNAME_MAX];
+
+    strcpy(path, name);
+
+    size_t ps = strlen(path);
+    size_t es = STRLEN(CART_EXT);
+
+    if(!(ps > es && strstr(path, CART_EXT) + es == path + ps))
+        strcat(path, CART_EXT);
+
+    return path;
+}
+
+void tic_tool_load_section(tic_mem* tic, const tic_cartridge* cart, const char* section)
+{
+    static const struct Section
+    {
+        const char* name;
+        s32 offset;
+        s32 size;
+    } Sections[] =
+        {
+#define SECTION_DEF(name, ...) {#name, offsetof(tic_bank, name), sizeof(tic_##name)},
+            TIC_SYNC_LIST(SECTION_DEF)
+#undef SECTION_DEF
+        };
+
+    if(section)
+    {
+        if(strcmp(section, "code") == 0)
+            memcpy(&tic->cart.code, &cart->code, sizeof(tic_code));
+        else
+            FOR(const struct Section*, it, Sections)
+        if(strcmp(section, it->name) == 0)
+        {
+            memcpy((u8*)&tic->cart.bank0 + it->offset, (const u8*)&cart->bank0 + it->offset, it->size);
+            break;
+        }
+    }
+    else
+        memcpy(&tic->cart, cart, sizeof(tic_cartridge));
+}
+
+bool tic_tool_is_project(const char* name)
+{
+    FOREACH_LANG(script)
+    {
+        if(tic_tool_has_ext(name, script->fileExtension))
+            return true;
+    }
+
+    return false;
+}
+
 s32 tic_tool_get_track_row_sfx(const tic_track_row* row)
 {
     return (row->sfxhi << MUSIC_SFXID_LOW_BITS) | row->sfxlow;
@@ -140,7 +198,7 @@ s32 tic_tool_get_track_row_sfx(const tic_track_row* row)
 
 void tic_tool_set_track_row_sfx(tic_track_row* row, s32 sfx)
 {
-    if(sfx >= SFX_COUNT) sfx = SFX_COUNT-1;
+    if(sfx >= SFX_COUNT) sfx = SFX_COUNT - 1;
 
     row->sfxhi = (sfx & 0x20) >> MUSIC_SFXID_LOW_BITS;
     row->sfxlow = sfx & 0x1f;
@@ -185,7 +243,7 @@ void tic_tool_str2buf(const char* str, s32 size, void* buf, bool flip)
     char val[] = "0x00";
     const char* ptr = str;
 
-    for(s32 i = 0; i < size/2; i++)
+    for(s32 i = 0; i < size / 2; i++)
     {
         if(flip)
         {
@@ -214,23 +272,25 @@ const char* tic_tool_metatag(const char* code, const char* tag, const char* comm
         else
             sprintf(tagBuffer, "%s:", tag);
 
-        if ((start = strstr(code, tagBuffer)))
+        if((start = strstr(code, tagBuffer)))
             start += strlen(tagBuffer);
     }
 
     static char value[128];
     *value = '\0';
 
-    if (start)
+    if(start)
     {
         const char* end = strstr(start, "\n");
 
-        if (end)
+        if(end)
         {
-            while (isspace(*start) && start < end) start++;
-            while (isspace(*(end - 1)) && end > start) end--;
+            while(isspace((u8)*start) && start < end)
+                start++;
+            while(isspace((u8) * (end - 1)) && end > start)
+                end--;
 
-            const s32 size = MIN((s32)(end - start), sizeof value - 1);
+            const s32 size = MIN((s32)(end - start), (s32)sizeof(value) - 1);
 
             memcpy(value, start, size);
             value[size] = '\0';

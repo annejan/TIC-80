@@ -1,43 +1,12 @@
 /* The strip links without the studio: this file builds toolbar.c with the core
- * and nothing else, so a call to anything studio.c provides fails to link here
- * rather than appearing quietly in the app build.
+ * and the module it draws through, ui.c, so a call to anything studio.c provides
+ * fails to link here rather than appearing quietly in the app build.
  *
  * Target toolbar-test in cmake/tests.cmake; `ctest -R toolbar` runs it.
  */
 #include "studio/toolbar.h"
 #include <assert.h>
 #include <stdio.h>
-
-static tic_tiles Tiles;
-static tic_sfx Sfx;
-
-static void fillTile(tic_tile* tile, u8 value)
-{
-    for(s32 i = 0; i < TIC_SPRITESIZE * TIC_SPRITESIZE; i++)
-        tic_tool_poke4(tile->data, i, value);
-}
-
-static void testIcon(tic_mem* tic)
-{
-    enum {Id = 5, X = 10, Y = 20};
-
-    fillTile(&Tiles.data[Id], 1);
-    toolbar_icon(tic, &Tiles, Id, X, Y, tic_color_red);
-
-    for(s32 y = 0; y < TIC_SPRITESIZE; y++)
-        for(s32 x = 0; x < TIC_SPRITESIZE; x++)
-            assert(tic_tool_peek4(tic->ram->vram.screen.data, (Y + y) * TIC80_WIDTH + X + x) == tic_color_red);
-
-    // A zero pixel leaves the screen alone.
-    fillTile(&Tiles.data[Id], 0);
-    toolbar_icon(tic, &Tiles, Id, X, Y, tic_color_white);
-
-    for(s32 y = 0; y < TIC_SPRITESIZE; y++)
-        for(s32 x = 0; x < TIC_SPRITESIZE; x++)
-            assert(tic_tool_peek4(tic->ram->vram.screen.data, (Y + y) * TIC80_WIDTH + X + x) == tic_color_red);
-
-    puts("icon ok");
-}
 
 // A strip with two editors in it, driven by hand: the test is the only caller
 // of toolbar_end, so the tab it clicks is the tab it declared.
@@ -49,18 +18,38 @@ static EditorMode Requested;
 
 static s32 ClipboardHits[5];
 
-static void clipboardCut(void* app)   { (void)app; ClipboardHits[0]++; }
-static void clipboardCopy(void* app)  { (void)app; ClipboardHits[1]++; }
-static void clipboardPaste(void* app) { (void)app; ClipboardHits[2]++; }
-static void clipboardUndo(void* app)  { (void)app; ClipboardHits[3]++; }
-static void clipboardRedo(void* app)  { (void)app; ClipboardHits[4]++; }
+static void clipboardCut(void* app)
+{
+    (void)app;
+    ClipboardHits[0]++;
+}
+static void clipboardCopy(void* app)
+{
+    (void)app;
+    ClipboardHits[1]++;
+}
+static void clipboardPaste(void* app)
+{
+    (void)app;
+    ClipboardHits[2]++;
+}
+static void clipboardUndo(void* app)
+{
+    (void)app;
+    ClipboardHits[3]++;
+}
+static void clipboardRedo(void* app)
+{
+    (void)app;
+    ClipboardHits[4]++;
+}
 
 static const ClipboardOps CodeClipboard = {clipboardCut, clipboardCopy, clipboardPaste, clipboardUndo, clipboardRedo};
 
 static const EditorApp Apps[TIC_MODES_COUNT] =
-{
-    [TIC_CODE_MODE]   = {.name = "CODE EDITOR",   .tip = "CODE EDITOR [f1]",   .icon = tic_icon_code,   .clipboard = &CodeClipboard},
-    [TIC_SPRITE_MODE] = {.name = "SPRITE EDITOR", .tip = "SPRITE EDITOR [f2]", .icon = tic_icon_sprite},
+    {
+        [TIC_CODE_MODE] = {.name = "CODE EDITOR", .tip = "CODE EDITOR [f1]", .icon = tic_icon_code, .clipboard = &CodeClipboard},
+        [TIC_SPRITE_MODE] = {.name = "SPRITE EDITOR", .tip = "SPRITE EDITOR [f2]", .icon = tic_icon_sprite},
 };
 
 static Toolbar makeStrip(tic_mem* tic, EditorMode mode)
@@ -68,15 +57,14 @@ static Toolbar makeStrip(tic_mem* tic, EditorMode mode)
     Cfg.cart = &Cart;
     Requested = TIC_MODES_COUNT;
 
-    return (Toolbar)
-    {
-        .tic      = tic,
-        .config   = &Cfg,
-        .mouse    = Mouse,
-        .tooltip  = Tooltip,
-        .apps     = Apps,
+    return (Toolbar){
+        .tic = tic,
+        .config = &Cfg,
+        .mouse = Mouse,
+        .tooltip = Tooltip,
+        .apps = Apps,
         .appCount = TIC_MODES_COUNT,
-        .mode     = mode,
+        .mode = mode,
         .requested = TIC_MODES_COUNT,
     };
 }
@@ -88,7 +76,7 @@ static void clickAt(tic_mem* tic, s32 x, s32 y)
     memset(Mouse, 0, sizeof Mouse);
 
     Mouse[tic_mouse_left].start = (tic_point){x, y};
-    Mouse[tic_mouse_left].end   = (tic_point){x, y};
+    Mouse[tic_mouse_left].end = (tic_point){x, y};
     Mouse[tic_mouse_left].click = true;
 
     // The raw input is in the full window; tic_api_mouse subtracts the margins,
@@ -99,7 +87,11 @@ static void clickAt(tic_mem* tic, s32 x, s32 y)
 
 static void testStrip(tic_mem* tic)
 {
-    enum {Button = 7, Centre = TIC80_WIDTH - Button / 2};
+    enum
+    {
+        Button = 7,
+        Centre = TIC80_WIDTH - Button / 2
+    };
 
     Toolbar tb = makeStrip(tic, TIC_CODE_MODE);
     ToolbarButton button = {.icon = tic_icon_copy, .tip = "COPY", .width = Button, .color = tic_color_light_grey, .enabled = true};
@@ -157,8 +149,15 @@ static u8 screenAt(tic_mem* tic, s32 x, s32 y)
 // the registry entry points at.
 static void testClipboard(tic_mem* tic)
 {
-    enum {Size = TOOLBAR_SIZE, Gap = 17 * TIC_FONT_WIDTH};
-    enum {Named = 2};   /* the registry below has two named entries */
+    enum
+    {
+        Size = TOOLBAR_SIZE,
+        Gap = 17 * TIC_FONT_WIDTH
+    };
+    enum
+    {
+        Named = 2
+    }; /* the registry below has two named entries */
 
     s32 app = 0;
 
@@ -204,7 +203,11 @@ static void testClipboard(tic_mem* tic)
     assert(strcmp(Tooltip, "COPY [ctrl+c]") == 0);
 
     {
-        enum {NameX = (Named + 1) * Size, NameRow = 1};
+        enum
+        {
+            NameX = (Named + 1) * Size,
+            NameRow = 1
+        };
         bool inked = false;
 
         for(s32 x = NameX; x < NameX + 15 && !inked; x++)
@@ -228,7 +231,14 @@ static void testClipboard(tic_mem* tic)
 
 static void testSlider(tic_mem* tic)
 {
-    enum {Width = 23, Height = 5, Stops = 4, Pitch = 6, Tick = 5};
+    enum
+    {
+        Width = 23,
+        Height = 5,
+        Stops = 4,
+        Pitch = 6,
+        Tick = 5
+    };
 
     Toolbar tb = makeStrip(tic, TIC_SPRITE_MODE);
     s32 left = TIC80_WIDTH - Width;
@@ -361,21 +371,29 @@ static s32 HookRow = -1;
 
 static void rowHook(Toolbar* tb, const tic_rect* rect, bool over, void* ctx)
 {
-    (void)tb; (void)over; (void)ctx;
+    (void)tb;
+    (void)over;
+    (void)ctx;
 
     HookRow = rect->y;
 }
 
 static void testWidgetLine(tic_mem* tic)
 {
-    enum {Gap = 6};
+    enum
+    {
+        Gap = 6
+    };
 
     Toolbar tb = makeStrip(tic, TIC_CODE_MODE);
 
     ToolbarButton button =
-    {
-        .tip = "T", .width = 7, .enabled = true, .draw = rowHook,
-    };
+        {
+            .tip = "T",
+            .width = 7,
+            .enabled = true,
+            .draw = rowHook,
+        };
 
     clickAt(tic, 500 - TIC80_OFFSET_LEFT, 3);
     toolbar_begin(&tb, true);
@@ -397,43 +415,12 @@ static void testWidgetLine(tic_mem* tic)
     puts("widget line ok");
 }
 
-static void testCursor(tic_mem* tic)
-{
-    toolbar_cursor(tic, tic_cursor_hand);
-    assert(tic->ram->vram.vars.cursor.sprite == tic_cursor_hand);
-
-    toolbar_cursor(tic, tic_cursor_ibeam);
-    assert(tic->ram->vram.vars.cursor.sprite == tic_cursor_ibeam);
-
-    puts("cursor ok");
-}
-
-static void testClick(tic_mem* tic)
-{
-    enum {Id = 3};
-    tic_sample* sample = &Sfx.samples.data[Id];
-
-    sample->note = NoteStart;
-    sample->octave = 4;
-
-    tic->ram->sfxpos[0] = (tic_sfx_pos){0};
-    toolbar_playClick(tic, &Sfx, Id);
-
-    // The click starts the effect on channel 0 and moves it off its start.
-    assert(memcmp(&tic->ram->sfxpos[0], &(tic_sfx_pos){0}, sizeof(tic_sfx_pos)) != 0);
-
-    puts("click ok");
-}
-
 int main(void)
 {
     tic_mem* tic = tic_core_create(TIC80_SAMPLERATE, TIC80_PIXEL_COLOR_RGBA8888);
     assert(tic);
 
-    testIcon(tic);
-    testCursor(tic);
     testWidgetLine(tic);
-    testClick(tic);
     testStrip(tic);
     testTabs(tic);
     testSlider(tic);

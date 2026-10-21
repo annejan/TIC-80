@@ -26,6 +26,7 @@
 #include "studio.h"
 #include "rom.h"
 #include "cart.h"
+#include "tools.h"
 #include "fs.h"
 #include "config.h"
 
@@ -33,62 +34,9 @@
 #include "project.h"
 #endif
 
-
-static const char* getName(const char* name, const char* ext)
-{
-    static char path[TICNAME_MAX];
-
-    strcpy(path, name);
-
-    size_t ps = strlen(path);
-    size_t es = strlen(ext);
-
-    if(!(ps > es && strstr(path, ext) + es == path + ps))
-        strcat(path, ext);
-
-    return path;
-}
-
-const char* getCartName(const char* name)
-{
-    return getName(name, CART_EXT);
-}
-
 static inline tic_cartridge* newCart()
 {
     return malloc(sizeof(tic_cartridge));
-}
-
-void loadCartSection(Studio* studio, const tic_cartridge* cart, const char* section)
-{
-    tic_mem* tic = getMemory(studio);
-
-    static const struct Section
-    {
-        const char* name;
-        s32 offset;
-        s32 size;
-    } Sections[] =
-    {
-#define SECTION_DEF(name, ...) {#name, offsetof(tic_bank, name), sizeof(tic_ ## name)},
-        TIC_SYNC_LIST(SECTION_DEF)
-#undef  SECTION_DEF
-    };
-
-    if(section)
-    {
-        if(strcmp(section, "code") == 0)
-            memcpy(&tic->cart.code, &cart->code, sizeof(tic_code));
-        else
-            FOR(const struct Section*, it, Sections)
-                if(strcmp(section, it->name) == 0)
-                {
-                    memcpy((u8*)&tic->cart.bank0 + it->offset, (const u8*)&cart->bank0 + it->offset, it->size);
-                    break;
-                }
-    }
-    else
-        memcpy(&tic->cart, cart, sizeof(tic_cartridge));
 }
 
 void studioSetCartName(Studio* studio, const char* name, const char* path)
@@ -118,7 +66,7 @@ static void hashLoadDone(const u8* buffer, s32 size, void* data)
     SCOPE(free(cart))
     {
         tic_cart_load(cart, buffer, size);
-        loadCartSection(studio, cart, loadByHashData->section);
+        tic_tool_load_section(getMemory(studio), cart, loadByHashData->section);
 
         tic_api_reset(getMemory(studio));
 
@@ -128,7 +76,7 @@ static void hashLoadDone(const u8* buffer, s32 size, void* data)
         studioRomLoaded(studio);
     }
 
-    if (loadByHashData->callback)
+    if(loadByHashData->callback)
         loadByHashData->callback(loadByHashData->calldata);
 
     FREE(loadByHashData->name);
@@ -138,8 +86,34 @@ static void hashLoadDone(const u8* buffer, s32 size, void* data)
 
 void studioLoadByHash(Studio* studio, const char* name, const char* hash, const char* section, fs_done_callback callback, void* data)
 {
-    LoadByHashData loadByHashData = { studio, strdup(name), section ? strdup(section) : NULL, callback, data};
+    LoadByHashData loadByHashData = {studio, strdup(name), section ? strdup(section) : NULL, callback, data};
     tic_fs_hashload(studio_fs(studio), name, hash, hashLoadDone, MOVE(loadByHashData));
+}
+
+// The cart's file changed under the studio — another editor, a build — and the
+// machine takes it again: the reload the console used to do for the host.
+void studioReloadCart(Studio* studio)
+{
+    tic_mem* tic = getMemory(studio);
+    const char* path = studioCart(studio)->path;
+
+    if(*path)
+    {
+        s32 size = 0;
+        void* data = fs_read(path, &size);
+
+        if(data) SCOPE(free(data))
+            {
+#if defined(TIC80_PRO)
+                if(tic_tool_is_project(path))
+                    tic_project_load(studioCart(studio)->name, data, size, &tic->cart);
+                else
+#endif
+                    tic_cart_load(&tic->cart, data, size);
+
+                studioRomLoaded(studio);
+            }
+    }
 }
 
 static void drawShadowText(tic_mem* tic, const char* text, s32 x, s32 y, tic_color color, s32 scale)
@@ -156,136 +130,153 @@ CartSaveResult studioSaveCart(Studio* studio, const char* name)
 
     if(name && strlen(name))
     {
-        u8* buffer = (u8*)malloc(sizeof(tic_cartridge) * 3);
-
-        if(buffer)
+        if(strcmp(name, CONFIG_TIC_PATH) == 0)
         {
-            if(strcmp(name, CONFIG_TIC_PATH) == 0)
-            {
-                Config* config = studio_config_get(studio);
-                config->saveConfigCart(config);
-                studioRomSaved(studio);
-                free(buffer);
-                return CART_SAVE_OK;
-            }
-            else
-            {
-                s32 size = 0;
+            Config* config = studio_config_get(studio);
+            config->saveConfigCart(config);
+            studioRomSaved(studio);
+            return CART_SAVE_OK;
+        }
+        else
+        {
+            // what the cart is saved into: the saved cart, or the project
+            // text, which is the cart written out and a few times its size
+            u8* buffer = NULL;
+            s32 size = 0;
 
-                if(tic_tool_has_ext(name, PNG_EXT))
+            if(tic_tool_has_ext(name, PNG_EXT))
+            {
+                png_buffer cover;
+
                 {
-                    png_buffer cover;
-
+                    enum
                     {
-                        enum{CoverWidth = 256};
+                        CoverWidth = 256
+                    };
 
-                        static const u8 Cartridge[] =
+                    static const u8 Cartridge[] =
                         {
-                            #include "../build/assets/cart.png.dat"
+#include "../build/assets/cart.png.dat"
                         };
 
-                        png_buffer template = {(u8*)Cartridge, sizeof Cartridge};
-                        png_img img = png_read(template, NULL);
+                    png_buffer template = {(u8*)Cartridge, sizeof Cartridge};
+                    png_img img = png_read(template, NULL);
 
-                        // draw screen
-                        {
-                            enum{PaddingLeft = 8, PaddingTop = 8};
-
-                            const tic_bank* bank = &tic->cart.bank0;
-                            const tic_rgb* pal = bank->palette.vbank0.colors;
-                            const u8* screen = bank->screen.data;
-                            u32* ptr = img.values + PaddingTop * CoverWidth + PaddingLeft;
-
-                            for(s32 i = 0; i < TIC80_WIDTH * TIC80_HEIGHT; i++)
-                                ptr[i / TIC80_WIDTH * CoverWidth + i % TIC80_WIDTH] = tic_rgba(pal + tic_tool_peek4(screen, i));
-                        }
-
-                        // draw title/author/desc
-                        {
-                            enum{Width = 224, Height = 40, PaddingTop = 162, PaddingLeft = 16, Scale = 2, Row = TIC_FONT_HEIGHT * 2 * Scale};
-
-                            tic_api_cls(tic, tic_color_dark_grey);
-
-                            const char* comment = tic_get_script(tic)->singleComment;
-
-                            const char* title = tic_tool_metatag(tic->cart.code.data, "title", comment);
-                            if(*title)
-                            {
-                                drawShadowText(tic, title, 0, 0, tic_color_white, Scale);
-                            }
-
-                            const char* author = tic_tool_metatag(tic->cart.code.data, "author", comment);
-                            if(*author)
-                            {
-                                char buf[TICNAME_MAX];
-                                snprintf(buf, sizeof buf, "by %s", author);
-                                drawShadowText(tic, buf, 0, Row, tic_color_grey, Scale);
-                            }
-
-                            u32* ptr = img.values + PaddingTop * CoverWidth + PaddingLeft;
-                            const u8* screen = tic->ram->vram.screen.data;
-							const tic_rgb Sweetie16[] = {
-								{0x1a, 0x1c, 0x2c}, {0x5d, 0x27, 0x5d}, {0xb1, 0x3e, 0x53}, {0xef, 0x7d, 0x57},
-								{0xff, 0xcd, 0x75}, {0xa7, 0xf0, 0x70}, {0x38, 0xb7, 0x64}, {0x25, 0x71, 0x79},
-								{0x29, 0x36, 0x6f}, {0x3b, 0x5d, 0xc9}, {0x41, 0xa6, 0xf6}, {0x73, 0xef, 0xf7},
-								{0xf4, 0xf4, 0xf4}, {0x94, 0xb0, 0xc2}, {0x56, 0x6c, 0x86}, {0x33, 0x3c, 0x57}
-							};
-							const tic_rgb* pal = Sweetie16;
-
-                            for(s32 y = 0; y < Height; y++)
-                                for(s32 x = 0; x < Width; x++)
-                                    ptr[CoverWidth * y + x] = tic_rgba(pal + tic_tool_peek4(screen, y * TIC80_WIDTH + x));
-                        }
-
-                        cover = png_write(img, (png_buffer){NULL, 0});
-
-                        free(img.data);
-                    }
-
-                    png_buffer zip = png_create(sizeof(tic_cartridge));
-
+                    // draw screen
                     {
-                        png_buffer cart = png_create(sizeof(tic_cartridge));
-                        cart.size = tic_cart_save(&tic->cart, cart.data);
-                        zip.size = tic_tool_zip(zip.data, zip.size, cart.data, cart.size);
-                        free(cart.data);
+                        enum
+                        {
+                            PaddingLeft = 8,
+                            PaddingTop = 8
+                        };
+
+                        const tic_bank* bank = &tic->cart.bank0;
+                        const tic_rgb* pal = bank->palette.vbank0.colors;
+                        const u8* screen = bank->screen.data;
+                        u32* ptr = img.values + PaddingTop * CoverWidth + PaddingLeft;
+
+                        for(s32 i = 0; i < TIC80_WIDTH * TIC80_HEIGHT; i++)
+                            ptr[i / TIC80_WIDTH * CoverWidth + i % TIC80_WIDTH] = tic_rgba(pal + tic_tool_peek4(screen, i));
                     }
 
-                    png_buffer result = png_encode(cover, zip);
-                    free(zip.data);
-                    free(cover.data);
+                    // draw title/author/desc
+                    {
+                        enum
+                        {
+                            Width = 224,
+                            Height = 40,
+                            PaddingTop = 162,
+                            PaddingLeft = 16,
+                            Scale = 2,
+                            Row = TIC_FONT_HEIGHT * 2 * Scale
+                        };
 
-                    buffer = result.data;
-                    size = result.size;
+                        tic_api_cls(tic, tic_color_dark_grey);
+
+                        const char* comment = tic_get_script(tic)->singleComment;
+
+                        const char* title = tic_tool_metatag(tic->cart.code.data, "title", comment);
+                        if(*title)
+                        {
+                            drawShadowText(tic, title, 0, 0, tic_color_white, Scale);
+                        }
+
+                        const char* author = tic_tool_metatag(tic->cart.code.data, "author", comment);
+                        if(*author)
+                        {
+                            char buf[TICNAME_MAX];
+                            snprintf(buf, sizeof buf, "by %s", author);
+                            drawShadowText(tic, buf, 0, Row, tic_color_grey, Scale);
+                        }
+
+                        u32* ptr = img.values + PaddingTop * CoverWidth + PaddingLeft;
+                        const u8* screen = tic->ram->vram.screen.data;
+                        const tic_rgb Sweetie16[] = {
+                            {0x1a, 0x1c, 0x2c}, {0x5d, 0x27, 0x5d}, {0xb1, 0x3e, 0x53}, {0xef, 0x7d, 0x57}, {0xff, 0xcd, 0x75}, {0xa7, 0xf0, 0x70}, {0x38, 0xb7, 0x64}, {0x25, 0x71, 0x79}, {0x29, 0x36, 0x6f}, {0x3b, 0x5d, 0xc9}, {0x41, 0xa6, 0xf6}, {0x73, 0xef, 0xf7}, {0xf4, 0xf4, 0xf4}, {0x94, 0xb0, 0xc2}, {0x56, 0x6c, 0x86}, {0x33, 0x3c, 0x57}};
+                        const tic_rgb* pal = Sweetie16;
+
+                        for(s32 y = 0; y < Height; y++)
+                            for(s32 x = 0; x < Width; x++)
+                                ptr[CoverWidth * y + x] = tic_rgba(pal + tic_tool_peek4(screen, y * TIC80_WIDTH + x));
+                    }
+
+                    cover = png_write(img, (png_buffer){NULL, 0});
+
+                    free(img.data);
                 }
+
+                png_buffer zip = png_create(TIC_CART_ZIP_SIZE);
+
+                {
+                    png_buffer cart = png_create(TIC_CART_SAVE_SIZE);
+                    cart.size = tic_cart_save(&tic->cart, cart.data);
+                    zip.size = tic_tool_zip(zip.data, zip.size, cart.data, cart.size);
+                    free(cart.data);
+                }
+
+                png_buffer result = png_encode(cover, zip);
+                free(zip.data);
+                free(cover.data);
+
+                buffer = result.data;
+                size = result.size;
+            }
 #if defined(TIC80_PRO)
-                else if(project_ext(name))
-                {
+            else if(tic_tool_is_project(name))
+            {
+                buffer = malloc(TIC_CART_SAVE_SIZE * 3);
+
+                if(buffer)
                     size = tic_project_save(name, buffer, &tic->cart);
-                }
+            }
 #endif
-                else
+            else
+            {
+                buffer = malloc(TIC_CART_SAVE_SIZE);
+
+                if(buffer)
                 {
-                    name = getCartName(name);
+                    name = tic_tool_cart_name(name);
                     size = tic_cart_save(&tic->cart, buffer);
                 }
+            }
 
-                if(size && tic_fs_save(studio_fs(studio), name, buffer, size, true))
-                {
-                    studioSetCartName(studio, name, tic_fs_path(studio_fs(studio), name));
-                    success = true;
-                    studioRomSaved(studio);
-                }
+            if(size && tic_fs_save(studio_fs(studio), name, buffer, size, true))
+            {
+                studioSetCartName(studio, name, tic_fs_path(studio_fs(studio), name));
+                success = true;
+                studioRomSaved(studio);
             }
 
             free(buffer);
         }
     }
-    else if (strlen(studioCart(studio)->name))
+    else if(strlen(studioCart(studio)->name))
     {
         return studioSaveCart(studio, studioCart(studio)->name);
     }
-    else return CART_SAVE_MISSING_NAME;
+    else
+        return CART_SAVE_MISSING_NAME;
 
     return success ? CART_SAVE_OK : CART_SAVE_ERROR;
 }
@@ -313,7 +304,8 @@ bool studioLoadCart(Studio* studio, const char* path)
 
         {
             const char* ptr = path + strlen(path);
-            while(ptr > path && !isslash(*ptr))--ptr;
+            while(ptr > path && !isslash(*ptr))
+                --ptr;
             cartName = ptr + isslash(*ptr);
         }
 
@@ -337,7 +329,7 @@ bool studioLoadCart(Studio* studio, const char* path)
             done = true;
         }
 #if defined(TIC80_PRO)
-        else if(project_ext(cartName))
+        else if(tic_tool_is_project(cartName))
         {
             if(tic_project_load(cartName, data, size, &tic->cart))
                 done = true;

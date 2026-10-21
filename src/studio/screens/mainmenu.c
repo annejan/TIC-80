@@ -46,19 +46,20 @@ struct StudioMainMenu
     struct StudioOptions* options;
 };
 
+// clang-format off
 #define OPTION_VALUES(...)                          \
     .values = (const char*[])__VA_ARGS__,           \
     .count = COUNT_OF(((const char*[])__VA_ARGS__))
+// clang-format on
 
 static void showMainMenu(void* data, s32 pos);
 static void onBackFromOptionsMenu(void* data, s32 pos);
 
-StudioMainMenu* studio_mainmenu_init(Menu *menu, Config *config)
+StudioMainMenu* studio_mainmenu_init(Menu* menu, Config* config)
 {
     StudioMainMenu* main = NEW(StudioMainMenu);
 
-    *main = (StudioMainMenu)
-    {
+    *main = (StudioMainMenu){
         .menu = menu,
         .options = &config->data.options,
         .studio = config->studio,
@@ -92,6 +93,7 @@ bool studio_mainmenu_keyboard(StudioMainMenu* main)
 
 static s32 optionFullscreenGet(void* data)
 {
+    (void)data;
     return tic_sys_fullscreen_get() ? 1 : 0;
 }
 
@@ -101,14 +103,14 @@ static void optionFullscreenSet(void* data, s32 pos)
     tic_sys_fullscreen_set(main->options->fullscreen = (pos == 1));
 }
 
-static const char OffValue[] =  "OFF";
-static const char OnValue[] =   "ON";
+static const char OffValue[] = "OFF";
+static const char OnValue[] = "ON";
 
 static MenuOption FullscreenOption =
-{
-    OPTION_VALUES({OffValue, OnValue}),
-    optionFullscreenGet,
-    optionFullscreenSet,
+    {
+        OPTION_VALUES({OffValue, OnValue}),
+        optionFullscreenGet,
+        optionFullscreenSet,
 };
 
 static s32 optionIntegerScaleGet(void* data)
@@ -124,10 +126,10 @@ static void optionIntegerScaleSet(void* data, s32 pos)
 }
 
 static MenuOption IntegerScaleOption =
-{
-    OPTION_VALUES({OffValue, OnValue}),
-    optionIntegerScaleGet,
-    optionIntegerScaleSet,
+    {
+        OPTION_VALUES({OffValue, OnValue}),
+        optionIntegerScaleGet,
+        optionIntegerScaleSet,
 };
 
 #if defined(BUILD_RENDER_CACHE)
@@ -145,10 +147,10 @@ static void optionDrawCacheSet(void* data, s32 pos)
 }
 
 static MenuOption DrawCacheOption =
-{
-    OPTION_VALUES({OffValue, OnValue}),
-    optionDrawCacheGet,
-    optionDrawCacheSet,
+    {
+        OPTION_VALUES({OffValue, OnValue}),
+        optionDrawCacheGet,
+        optionDrawCacheSet,
 };
 #endif
 
@@ -166,10 +168,10 @@ static void optionCrtMonitorSet(void* data, s32 pos)
 }
 
 static MenuOption CrtMonitorOption =
-{
-    OPTION_VALUES({OffValue, OnValue}),
-    optionCrtMonitorGet,
-    optionCrtMonitorSet,
+    {
+        OPTION_VALUES({OffValue, OnValue}),
+        optionCrtMonitorGet,
+        optionCrtMonitorSet,
 };
 
 #endif
@@ -191,10 +193,10 @@ static void optionVSyncSet(void* data, s32 pos)
 }
 
 static MenuOption VSyncOption =
-{
-    OPTION_VALUES({OffValue, OnValue}),
-    optionVSyncGet,
-    optionVSyncSet,
+    {
+        OPTION_VALUES({OffValue, OnValue}),
+        optionVSyncGet,
+        optionVSyncSet,
 };
 #endif
 
@@ -211,16 +213,28 @@ static void optionVolumeSet(void* data, s32 pos)
 }
 
 static MenuOption VolumeOption =
-{
-    OPTION_VALUES(
     {
-        "00", "01", "02", "03",
-        "04", "05", "06", "07",
-        "08", "09", "10", "11",
-        "12", "13", "14", "15",
-    }),
-    optionVolumeGet,
-    optionVolumeSet,
+        OPTION_VALUES(
+            {
+                "00",
+                "01",
+                "02",
+                "03",
+                "04",
+                "05",
+                "06",
+                "07",
+                "08",
+                "09",
+                "10",
+                "11",
+                "12",
+                "13",
+                "14",
+                "15",
+            }),
+        optionVolumeGet,
+        optionVolumeSet,
 };
 
 // Autosave belongs to the full client: it decides whether a cart SURF loaded
@@ -240,10 +254,10 @@ static void optionAutoSaveSet(void* data, s32 pos)
 }
 
 static MenuOption AutoSaveOption =
-{
-    OPTION_VALUES({OffValue, OnValue}),
-    optionAutoSaveGet,
-    optionAutoSaveSet,
+    {
+        OPTION_VALUES({OffValue, OnValue}),
+        optionAutoSaveGet,
+        optionAutoSaveSet,
 };
 #endif
 
@@ -255,7 +269,8 @@ static s32 optionTabSizeGet(void* data)
 
     s32 ret = 0;
     tsize /= 2;
-    while(tsize != 0) {
+    while(tsize != 0)
+    {
         ret++;
         tsize /= 2;
     }
@@ -266,17 +281,17 @@ static s32 optionTabSizeGet(void* data)
 static void optionTabSizeSet(void* data, s32 pos)
 {
     s32 tsize = 1;
-    for (s32 i = 0; i < pos; i++)
+    for(s32 i = 0; i < pos; i++)
         tsize *= 2;
     StudioMainMenu* main = data;
     main->options->tabSize = tsize;
 }
 
 static MenuOption TabSizeOption =
-{
-    OPTION_VALUES({"1", "2", "4", "8"}),
-    optionTabSizeGet,
-    optionTabSizeSet,
+    {
+        OPTION_VALUES({"1", "2", "4", "8"}),
+        optionTabSizeGet,
+        optionTabSizeSet,
 };
 
 static s32 optionTabModeGet(void* data)
@@ -288,17 +303,15 @@ static s32 optionTabModeGet(void* data)
 static void optionTabModeSet(void* data, s32 pos)
 {
     StudioMainMenu* main = data;
-    main->options->tabMode = (enum TabMode) pos;
+    main->options->tabMode = (enum TabMode)pos;
 }
 
-
 static MenuOption TabModeOption =
-{
-    OPTION_VALUES({"AUTO", "TABS", "SPACES"}),
-    optionTabModeGet,
-    optionTabModeSet,
+    {
+        OPTION_VALUES({"AUTO", "TABS", "SPACES"}),
+        optionTabModeGet,
+        optionTabModeSet,
 };
-
 
 static s32 optionKeybindModeGet(void* data)
 {
@@ -309,14 +322,14 @@ static s32 optionKeybindModeGet(void* data)
 static void optionKeybindModeSet(void* data, s32 pos)
 {
     StudioMainMenu* main = data;
-    main->options->keybindMode = (enum KeybindMode) pos;
+    main->options->keybindMode = (enum KeybindMode)pos;
 }
 
 static MenuOption KeybindModeOption =
-{
-    OPTION_VALUES({"STANDARD", "EMACS", "VI"}),
-    optionKeybindModeGet,
-    optionKeybindModeSet,
+    {
+        OPTION_VALUES({"STANDARD", "EMACS", "VI"}),
+        optionKeybindModeGet,
+        optionKeybindModeSet,
 };
 
 static void showEditorMenu(void* data, s32 pos);
@@ -325,6 +338,7 @@ static void showEditorMenu(void* data, s32 pos);
 
 static void showGamepadMenu(void* data, s32 pos)
 {
+    (void)pos;
     StudioMainMenu* main = data;
     main->gamepads.index = 0;
     main->gamepads.mapping = main->options->mapping;
@@ -356,26 +370,26 @@ enum
 };
 
 static const MenuItem OptionMenu[] =
-{
+    {
 #if defined(CRT_SHADER_SUPPORT)
-    {"CRT MONITOR",     NULL,   &CrtMonitorOption},
+        {.label = "CRT MONITOR", .option = &CrtMonitorOption},
 #endif
 #if !defined(VSYNC_ALWAYS_ON)
-    {"VSYNC",           NULL,   &VSyncOption, "VSYNC needs restart!"},
+        {.label = "VSYNC", .option = &VSyncOption, .help = "VSYNC needs restart!"},
 #endif
-    {"FULLSCREEN",      NULL,   &FullscreenOption},
-    {"INTEGER SCALE",   NULL,   &IntegerScaleOption},
+        {.label = "FULLSCREEN", .option = &FullscreenOption},
+        {.label = "INTEGER SCALE", .option = &IntegerScaleOption},
 #if defined(BUILD_RENDER_CACHE)
-    {"DRAW CACHE",      NULL,   &DrawCacheOption, "Cache draw calls for CPU saving"},
+        {.label = "DRAW CACHE", .option = &DrawCacheOption, .help = "Cache draw calls for CPU saving"},
 #endif
-    {"VOLUME",          NULL,   &VolumeOption},
+        {.label = "VOLUME", .option = &VolumeOption},
 #if defined(BUILD_EDITORS)
-    {"AUTOSAVE",        NULL,   &AutoSaveOption, "Keep carts loaded from the web"},
-    {"EDITOR OPTIONS", showEditorMenu},
+        {.label = "AUTOSAVE", .option = &AutoSaveOption, .help = "Keep carts loaded from the web"},
+        {.label = "EDITOR OPTIONS", .handler = showEditorMenu},
 #endif
-    {"SETUP GAMEPAD",       showGamepadMenu},
-    {""},
-    {"BACK",            onBackFromOptionsMenu, .back = true},
+        {.label = "SETUP GAMEPAD", .handler = showGamepadMenu},
+        {.label = ""},
+        {.label = "BACK", .handler = onBackFromOptionsMenu, .back = true},
 };
 
 // The menu cursor is an index into the table — a submenu returns to
@@ -405,22 +419,23 @@ enum
 };
 
 static const MenuItem EditorMenu[] =
-{
-    {"TAB SIZE",          NULL,   &TabSizeOption,     "Indentation is your friend"},
-    {"TAB MODE",          NULL,   &TabModeOption,     "Auto uses spaces for python/moonscript"},
-    {"KEYBIND MODE",      NULL,   &KeybindModeOption, "For the cool kids only"},
-    {""},
-    {"BACK",            showOptionsMenu, .back = true},
+    {
+        {.label = "TAB SIZE", .option = &TabSizeOption, .help = "Indentation is your friend"},
+        {.label = "TAB MODE", .option = &TabModeOption, .help = "Auto uses spaces for python/moonscript"},
+        {.label = "KEYBIND MODE", .option = &KeybindModeOption, .help = "For the cool kids only"},
+        {.label = ""},
+        {.label = "BACK", .handler = showOptionsMenu, .back = true},
 };
 
 static_assert(COUNT_OF(EditorMenu) == EditorMenu_Back + 1, "EditorMenuCount");
 
 static void showEditorMenu(void* data, s32 pos)
 {
+    (void)pos;
     StudioMainMenu* main = data;
 
     studio_menu_init(main->menu, EditorMenu,
-        COUNT_OF(EditorMenu), EditorMenu_KeybindMode, OptionsMenu_Editor, showOptionsMenu, main);
+                     COUNT_OF(EditorMenu), EditorMenu_KeybindMode, OptionsMenu_Editor, showOptionsMenu, main);
 }
 #endif
 
@@ -457,22 +472,22 @@ static void initGameMenu(StudioMainMenu* main)
 
         SCOPE(free(menu))
         {
-            MenuItem *items = NULL;
+            MenuItem* items = NULL;
             s32 count = 0;
 
             char* label = strtok(menu, " ");
             while(label)
             {
                 items = realloc(items, sizeof(MenuItem) * ++count);
-                items[count - 1] = (MenuItem){strdup(label), gameMenuHandler};
+                items[count - 1] = (MenuItem){.label = strdup(label), .handler = gameMenuHandler};
 
                 label = strtok(NULL, " ");
             }
 
             count += 2;
             items = realloc(items, sizeof(MenuItem) * count);
-            items[count - 2] = (MenuItem){strdup("")};
-            items[count - 1] = (MenuItem){strdup("BACK"), showMainMenu, .back = true};
+            items[count - 2] = (MenuItem){.label = strdup("")};
+            items[count - 1] = (MenuItem){.label = strdup("BACK"), .handler = showMainMenu, .back = true};
 
             main->items = items;
             main->count = count;
@@ -482,6 +497,7 @@ static void initGameMenu(StudioMainMenu* main)
 
 static void showGameMenu(void* data, s32 pos)
 {
+    (void)pos;
     StudioMainMenu* main = data;
     studio_menu_init(main->menu, main->items, main->count, 0, 0, showMainMenu, main);
 }
@@ -506,6 +522,7 @@ static void onBackFromOptionsMenu(void* data, s32 pos)
 
 static void onResumeGame(void* data, s32 pos)
 {
+    (void)pos;
     StudioMainMenu* main = data;
     resumeGame(main->studio);
 }
@@ -527,6 +544,7 @@ static void onMenuBack(void* data, s32 pos)
 
 static void onResetGame(void* data, s32 pos)
 {
+    (void)pos;
     StudioMainMenu* main = data;
     tic_api_reset(main->tic);
     setStudioMode(main->studio, TIC_RUN_MODE);
@@ -534,6 +552,7 @@ static void onResetGame(void* data, s32 pos)
 
 static void onExitStudio(void* data, s32 pos)
 {
+    (void)pos;
     StudioMainMenu* main = data;
     exitStudio(main->studio);
 }
@@ -541,6 +560,7 @@ static void onExitStudio(void* data, s32 pos)
 #if defined(BUILD_EDITORS) || defined(BUILD_SURF)
 static void onExitGame(void* data, s32 pos)
 {
+    (void)pos;
     StudioMainMenu* main = data;
     exitGame(main->studio);
 }
@@ -560,24 +580,25 @@ enum MainMenu
 };
 
 static const MenuItem MainMenu[] =
-{
-    {"GAME MENU",   showGameMenu},
-    {"RESUME GAME", onResumeGame},
-    {"RESET GAME",  onResetGame},
+    {
+        {.label = "GAME MENU", .handler = showGameMenu},
+        {.label = "RESUME GAME", .handler = onResumeGame},
+        {.label = "RESET GAME", .handler = onResetGame},
 #if defined(BUILD_EDITORS)
-    {"CLOSE GAME",  onExitGame, NULL, "Press F1 to switch to editor"},
+        {.label = "CLOSE GAME", .handler = onExitGame, .help = "Press F1 to switch to editor"},
 #elif defined(BUILD_SURF)
-    {"CLOSE GAME",  onExitGame},
+        {.label = "CLOSE GAME", .handler = onExitGame},
 #endif
-    {"OPTIONS",     showOptionsMenu},
-    {""},
-    {"QUIT TIC-80", onExitStudio},
+        {.label = "OPTIONS", .handler = showOptionsMenu},
+        {.label = ""},
+        {.label = "QUIT TIC-80", .handler = onExitStudio},
 };
 
 static_assert(COUNT_OF(MainMenu) == MainMenu_Quit + 1, "MainMenuCount");
 
 static void showMainMenu(void* data, s32 pos)
 {
+    (void)pos;
     StudioMainMenu* main = data;
     initGameMenu(main);
 
@@ -595,6 +616,7 @@ static void showOptionsMenuPos(void* data, s32 pos)
 
 static void showOptionsMenu(void* data, s32 pos)
 {
+    (void)pos;
     showOptionsMenuPos(data, OptionsMenu_VolumeOption);
 }
 
@@ -603,15 +625,15 @@ static void resetGamepadMenu(void* data, s32 pos);
 static char MappingItems[TIC_BUTTONS][sizeof "RIGHT - RIGHT"];
 
 static const char* const ButtonLabels[] =
-{
-    "UP",
-    "DOWN",
-    "LEFT",
-    "RIGHT",
-    "A",
-    "B",
-    "X",
-    "Y",
+    {
+        "UP",
+        "DOWN",
+        "LEFT",
+        "RIGHT",
+        "A",
+        "B",
+        "X",
+        "Y",
 };
 
 enum
@@ -643,10 +665,10 @@ static void assignMapping(void* data, s32 pos)
     static char str[sizeof Fmt + STRLEN("RIGHT")];
 
     static const MenuItem AssignKeyMenu[] =
-    {
-        {"Please, press a key you want"},
-        {str},
-    };
+        {
+            {.label = "Please, press a key you want"},
+            {.label = str},
+        };
 
     sprintf(str, Fmt, ButtonLabels[main->gamepads.key]);
 
@@ -656,21 +678,103 @@ static void assignMapping(void* data, s32 pos)
 static void initGamepadButtons(StudioMainMenu* menu)
 {
     static const char* const KeysList[] =
-    {
-        "...",
-        "A",    "B",    "C",    "D",    "E",    "F",    "G",    "H",
-        "I",    "J",    "K",    "L",    "M",    "N",    "O",    "P",
-        "Q",    "R",    "S",    "T",    "U",    "V",    "W",    "X",
-        "Y",    "Z",    "0",    "1",    "2",    "3",    "4",    "5",
-        "6",    "7",    "8",    "9",    "-",    "=",    "[",    "]",
-        "\\",   ";",    "'",    "`",    ",",    ".",    "/",    "SPCE",
-        "TAB",  "RET",  "BACKS","DEL",  "INS",  "PGUP", "PGDN", "HOME",
-        "END",  "UP",   "DOWN", "LEFT", "RIGHT","CAPS", "CTRL", "SHIFT",
-        "ALT",  "ESC",  "F1",   "F2",   "F3",   "F4",   "F5",   "F6",
-        "F7",   "F8",   "F9",   "F10",  "F11",  "F12",  "NP0",  "NP1",
-        "NP2",  "NP3",  "NP4",  "NP5",  "NP6",  "NP7",  "NP8",  "NP9",
-        "NP+",  "NP-",  "NP*",  "NP/",  "NPENT", "NP.",
-    };
+        {
+            "...",
+            "A",
+            "B",
+            "C",
+            "D",
+            "E",
+            "F",
+            "G",
+            "H",
+            "I",
+            "J",
+            "K",
+            "L",
+            "M",
+            "N",
+            "O",
+            "P",
+            "Q",
+            "R",
+            "S",
+            "T",
+            "U",
+            "V",
+            "W",
+            "X",
+            "Y",
+            "Z",
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "-",
+            "=",
+            "[",
+            "]",
+            "\\",
+            ";",
+            "'",
+            "`",
+            ",",
+            ".",
+            "/",
+            "SPCE",
+            "TAB",
+            "RET",
+            "BACKS",
+            "DEL",
+            "INS",
+            "PGUP",
+            "PGDN",
+            "HOME",
+            "END",
+            "UP",
+            "DOWN",
+            "LEFT",
+            "RIGHT",
+            "CAPS",
+            "CTRL",
+            "SHIFT",
+            "ALT",
+            "ESC",
+            "F1",
+            "F2",
+            "F3",
+            "F4",
+            "F5",
+            "F6",
+            "F7",
+            "F8",
+            "F9",
+            "F10",
+            "F11",
+            "F12",
+            "NP0",
+            "NP1",
+            "NP2",
+            "NP3",
+            "NP4",
+            "NP5",
+            "NP6",
+            "NP7",
+            "NP8",
+            "NP9",
+            "NP+",
+            "NP-",
+            "NP*",
+            "NP/",
+            "NPENT",
+            "NP.",
+        };
 
     for(s32 i = 0, index = menu->gamepads.index * TIC_BUTTONS; i != TIC_BUTTONS; ++i)
         sprintf(MappingItems[i], "%-5s - %-5s", ButtonLabels[i], KeysList[menu->gamepads.mapping.data[index++]]);
@@ -690,14 +794,15 @@ static void optionGamepadSet(void* data, s32 pos)
 }
 
 static MenuOption GamepadOption =
-{
-    OPTION_VALUES({"1", "2", "3", "4"}),
-    optionGamepadGet,
-    optionGamepadSet,
+    {
+        OPTION_VALUES({"1", "2", "3", "4"}),
+        optionGamepadGet,
+        optionGamepadSet,
 };
 
 static void clearGamepadMenu(void* data, s32 pos)
 {
+    (void)pos;
     StudioMainMenu* main = data;
     ZEROMEM(main->gamepads.mapping);
     initGamepadMenu(main);
@@ -705,6 +810,7 @@ static void clearGamepadMenu(void* data, s32 pos)
 
 static void saveGamepadMenu(void* data, s32 pos)
 {
+    (void)pos;
     StudioMainMenu* main = data;
 
     main->options->mapping = main->gamepads.mapping;
@@ -714,39 +820,40 @@ static void saveGamepadMenu(void* data, s32 pos)
 static void initGamepadMenu(StudioMainMenu* main)
 {
     static const MenuItem GamepadMenu[] =
-    {
-        {"GAMEPAD", NULL, &GamepadOption},
-        {""},
+        {
+            {.label = "GAMEPAD", .option = &GamepadOption},
+            {.label = ""},
 
-        {MappingItems[0], assignMapping},
-        {MappingItems[1], assignMapping},
-        {MappingItems[2], assignMapping},
-        {MappingItems[3], assignMapping},
-        {MappingItems[4], assignMapping},
-        {MappingItems[5], assignMapping},
-        {MappingItems[6], assignMapping},
-        {MappingItems[7], assignMapping},
+            {.label = MappingItems[0], .handler = assignMapping},
+            {.label = MappingItems[1], .handler = assignMapping},
+            {.label = MappingItems[2], .handler = assignMapping},
+            {.label = MappingItems[3], .handler = assignMapping},
+            {.label = MappingItems[4], .handler = assignMapping},
+            {.label = MappingItems[5], .handler = assignMapping},
+            {.label = MappingItems[6], .handler = assignMapping},
+            {.label = MappingItems[7], .handler = assignMapping},
 
-        {""},
-        {"SAVE MAPPING",        saveGamepadMenu},
-        {"CLEAR MAPPING",       clearGamepadMenu},
-        {"RESET TO DEFAULTS",   resetGamepadMenu},
-        {"BACK",                showOptionsMenu, .back = true},
-    };
+            {.label = ""},
+            {.label = "SAVE MAPPING", .handler = saveGamepadMenu},
+            {.label = "CLEAR MAPPING", .handler = clearGamepadMenu},
+            {.label = "RESET TO DEFAULTS", .handler = resetGamepadMenu},
+            {.label = "BACK", .handler = showOptionsMenu, .back = true},
+        };
 
     static_assert(COUNT_OF(GamepadMenu) == GamepadMenu_Back + 1, "GamepadMenuCount");
 
     initGamepadButtons(main);
 
     studio_menu_init(main->menu, GamepadMenu, COUNT_OF(GamepadMenu),
-        main->gamepads.key < 0 ? GamepadMenu_Gamepad0 : main->gamepads.key + GamepadMenu_Gamepad0,
-        OptionsMenu_Gamepad, showOptionsMenu, main);
+                     main->gamepads.key < 0 ? GamepadMenu_Gamepad0 : main->gamepads.key + GamepadMenu_Gamepad0,
+                     OptionsMenu_Gamepad, showOptionsMenu, main);
 
     main->gamepads.key = -1;
 }
 
 static void resetGamepadMenu(void* data, s32 pos)
 {
+    (void)pos;
     StudioMainMenu* main = data;
     main->gamepads.index = 0;
     ZEROMEM(main->gamepads.mapping);

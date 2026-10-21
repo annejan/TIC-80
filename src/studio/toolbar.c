@@ -21,8 +21,10 @@
 // SOFTWARE.
 
 #include "toolbar.h"
+#include "ui.h"
 
-// Links against the core alone; tests/toolbar.c builds it without studio.c.
+// Links without the studio's host: tests/toolbar.c builds it with ui.c, the
+// module it draws through, and nothing else.
 
 // Before the mode's tick, so the strip's frame is settled first.
 void toolbar_step(Toolbar* tb)
@@ -43,10 +45,7 @@ void toolbar_step(Toolbar* tb)
 
 static inline bool pointInRect(const tic_point* pt, const tic_rect* rect)
 {
-    return (pt->x >= rect->x)
-        && (pt->x < (rect->x + rect->w))
-        && (pt->y >= rect->y)
-        && (pt->y < (rect->y + rect->h));
+    return (pt->x >= rect->x) && (pt->x < (rect->x + rect->w)) && (pt->y >= rect->y) && (pt->y < (rect->y + rect->h));
 }
 
 // The rect is in strip coordinates, the mouse in screen ones. Each endpoint is
@@ -59,7 +58,7 @@ static bool stripClick(Toolbar* tb, const tic_rect* rect, tic_mouse_btn button)
         return false;
 
     tic_point start = {state->start.x, state->start.y - tb->press.y[button]};
-    tic_point end   = {state->end.x,   state->end.y   - tb->y};
+    tic_point end = {state->end.x, state->end.y - tb->y};
 
     if(!pointInRect(&start, rect) || !pointInRect(&end, rect))
         return false;
@@ -91,7 +90,7 @@ static bool stripHover(Toolbar* tb, const tic_rect* rect, const char* tip)
     if(!stripOver(tb, rect))
         return false;
 
-    toolbar_cursor(tb->tic, tic_cursor_hand);
+    ui_cursor(tb->tic, tic_cursor_hand);
 
     if(tip)
         strncpy(tb->tooltip, tip, STUDIO_TEXT_BUFFER_WIDTH - 1);
@@ -104,7 +103,7 @@ static void stripGlyph(Toolbar* tb, const ToolbarButton* button, s32 x, s32 y, u
     if(button->label)
         tic_api_print(tb->tic, button->label, x, y + tb->y, color, true, 1, button->altFont);
     else
-        toolbar_icon(tb->tic, &tb->config->cart->bank0.tiles, button->icon, x, y + tb->y, color);
+        ui_icon(tb->tic, &tb->config->cart->bank0.tiles, button->icon, x, y + tb->y, color);
 }
 
 static void stripButton(Toolbar* tb, const ToolbarButton* button, const tic_rect* rect, bool over)
@@ -149,7 +148,11 @@ bool toolbar_button(Toolbar* tb, const ToolbarButton* button)
 // centre on top. A range wider than the control still renders.
 bool toolbar_slider(Toolbar* tb, const char* tip, s32* value, s32 min, s32 max)
 {
-    enum {Width = 23, Height = 5};
+    enum
+    {
+        Width = 23,
+        Height = 5
+    };
 
     tic_rect rect = {tb->railX - Width, 1, Width, Height};
 
@@ -159,7 +162,7 @@ bool toolbar_slider(Toolbar* tb, const char* tip, s32* value, s32 min, s32 max)
 
     s32 stops = MAX(1, max - min + 1);
     s32 pitch = MAX(1, (Width + 1) / stops);
-    s32 tick  = MIN(MAX(1, pitch - 1), Height);
+    s32 tick = MIN(MAX(1, pitch - 1), Height);
 
     bool changed = false;
 
@@ -198,7 +201,10 @@ bool toolbar_slider(Toolbar* tb, const char* tip, s32* value, s32 min, s32 max)
 // same five operations in every editor, acting on whatever the registry says.
 void toolbar_end(Toolbar* tb)
 {
-    enum {Size = TOOLBAR_SIZE};
+    enum
+    {
+        Size = TOOLBAR_SIZE
+    };
 
     s32 tab = 0;
     s32 current = -1;
@@ -218,17 +224,18 @@ void toolbar_end(Toolbar* tb)
         if(stripClick(tb, &rect, tic_mouse_left))
             tb->requested = mode;
 
-        if(tb->mode == mode)
+        if((s32)tb->mode == mode)
             current = tab;
 
         if(current == tab)
         {
-            toolbar_icon(tb->tic, tiles, tic_icon_tab, rect.x, tb->y, tic_color_grey);
-            toolbar_icon(tb->tic, tiles, app->icon, rect.x, tb->y + 1, tic_color_black);
+            ui_icon(tb->tic, tiles, tic_icon_tab, rect.x, tb->y, tic_color_grey);
+            ui_icon(tb->tic, tiles, app->icon, rect.x, tb->y + 1, tic_color_black);
         }
 
-        toolbar_icon(tb->tic, tiles, app->icon, rect.x, tb->y,
-            current == tab ? tic_color_white : over ? tic_color_grey : tic_color_light_grey);
+        ui_icon(tb->tic, tiles, app->icon, rect.x, tb->y,
+                current == tab ? tic_color_white : over ? tic_color_grey
+                                                        : tic_color_light_grey);
 
         tab++;
     }
@@ -240,7 +247,7 @@ void toolbar_end(Toolbar* tb)
     s32 x = x0;
 
     // A pro build's bank row sits between the tabs and the row that follows.
-#if defined (TIC80_PRO) && defined(BUILD_EDITORS)
+#if defined(TIC80_PRO)
     x0 += Size - 2;
 #endif
 
@@ -249,35 +256,48 @@ void toolbar_end(Toolbar* tb)
     if(!ops)
         return;
 
-    enum {Gap = 17 * TIC_FONT_WIDTH, Count = 5};
-
-    static const struct { u8 icon; const char* tip; u8 color; } Buttons[Count] =
+    enum
     {
-        {tic_icon_cut,   "CUT [ctrl+x]",    tic_color_red},
-        {tic_icon_copy,  "COPY [ctrl+c]",   tic_color_orange},
-        {tic_icon_paste, "PASTE [ctrl+v]",  tic_color_yellow},
-        {tic_icon_undo,  "UNDO [ctrl+z]",   tic_color_light_green},
-        {tic_icon_redo,  "REDO [ctrl+y]",   tic_color_green},
+        Gap = 17 * TIC_FONT_WIDTH,
+        Count = 5
     };
+
+    static const struct
+    {
+        u8 icon;
+        const char* tip;
+        u8 color;
+    } Buttons[Count] =
+        {
+            {tic_icon_cut, "CUT [ctrl+x]", tic_color_red},
+            {tic_icon_copy, "COPY [ctrl+c]", tic_color_orange},
+            {tic_icon_paste, "PASTE [ctrl+v]", tic_color_yellow},
+            {tic_icon_undo, "UNDO [ctrl+z]", tic_color_light_green},
+            {tic_icon_redo, "REDO [ctrl+y]", tic_color_green},
+        };
 
     void (*const handlers[Count])(void*) =
-    {
-        ops->cut, ops->copy, ops->paste, ops->undo, ops->redo,
-    };
+        {
+            ops->cut,
+            ops->copy,
+            ops->paste,
+            ops->undo,
+            ops->redo,
+        };
 
     x += Gap;
 
     for(s32 i = 0; i < Count; i++)
     {
         ToolbarButton button =
-        {
-            .icon = Buttons[i].icon,
-            .tip = Buttons[i].tip,
-            .width = Size,
-            .color = tic_color_light_grey,
-            .over = Buttons[i].color,
-            .enabled = true,
-        };
+            {
+                .icon = Buttons[i].icon,
+                .tip = Buttons[i].tip,
+                .width = Size,
+                .color = tic_color_light_grey,
+                .over = Buttons[i].color,
+                .enabled = true,
+            };
 
         tic_rect rect = {x + i * Size, 0, Size, Size};
 
@@ -290,7 +310,8 @@ void toolbar_end(Toolbar* tb)
         if(held)
             tic_api_rect(tb->tic, rect.x, rect.y + tb->y, rect.w, rect.h, button.over);
 
-        stripGlyph(tb, &button, rect.x, rect.y, held ? tic_color_white : over ? button.over : button.color);
+        stripGlyph(tb, &button, rect.x, rect.y, held ? tic_color_white : over ? button.over
+                                                                              : button.color);
     }
 
     // The name and tooltip yield to a pro build's bank row, but nothing else
@@ -301,37 +322,5 @@ void toolbar_end(Toolbar* tb)
     // Last, so a clipboard button's hover has already set the tooltip this
     // frame draws — which is the order the old drawExtrabar was called in.
     tic_api_print(tb->tic, tb->tooltip[0] ? tb->tooltip : tb->apps[tb->mode].name, x0, 1 + tb->y,
-        tb->tooltip[0] ? tic_color_dark_grey : tic_color_grey, false, 1, false);
-}
-
-void toolbar_icon(tic_mem* tic, const tic_tiles* tiles, s32 id, s32 x, s32 y, u8 color)
-{
-    const tic_tile* tile = &tiles->data[id];
-
-    for(s32 i = 0, sx = x, ex = sx + TIC_SPRITESIZE; i != TIC_SPRITESIZE * TIC_SPRITESIZE; ++i, ++x)
-    {
-        if(x == ex)
-        {
-            x = sx;
-            y++;
-        }
-
-        if(tic_tool_peek4(tile, i))
-            tic_api_pix(tic, x, y, color, false);
-    }
-}
-
-void toolbar_cursor(tic_mem* tic, tic_cursor id)
-{
-    VBANK(tic, 0)
-    {
-        tic->ram->vram.vars.cursor.sprite = id;
-    }
-}
-
-void toolbar_playClick(tic_mem* tic, const tic_sfx* sfx, s32 id)
-{
-    const tic_sample* effect = &sfx->samples.data[id];
-
-    tic_api_sfx(tic, id, effect->note, effect->octave, -1, 0, MAX_VOLUME, MAX_VOLUME, effect->speed);
+                  tb->tooltip[0] ? tic_color_dark_grey : tic_color_grey, false, 1, false);
 }

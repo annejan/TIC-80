@@ -9,6 +9,11 @@ Documentation: https://miniaud.io/docs
 GitHub:        https://github.com/mackron/miniaudio
 */
 
+// Vendored third-party header: its warnings are its own, not ours.
+#if defined(__GNUC__)
+#pragma GCC system_header
+#endif
+
 /*
 1. Introduction
 ===============

@@ -60,7 +60,10 @@ if(BUILD_WITH_RUBY)
     set(MRUBY_LIB ${MRUBY_DIR}/build/target/lib/libmruby.a)
 
     target_include_directories(ruby
-        PUBLIC ${MRUBY_DIR}/include
+        PUBLIC
+            ${MRUBY_DIR}/include
+            # mruby 4 generates the presym headers into the build tree.
+            ${MRUBY_DIR}/build/target/include
         PRIVATE
             ${CMAKE_SOURCE_DIR}/include
             ${CMAKE_SOURCE_DIR}/src
@@ -78,8 +81,13 @@ if(BUILD_WITH_RUBY)
         execute_process(COMMAND xcrun --sdk macosx --show-sdk-path OUTPUT_VARIABLE MRUBY_SYSROOT OUTPUT_STRIP_TRAILING_WHITESPACE)
     endif()
 
-    if(ANDROID_NDK_HOME)
-        set(MRUBY_RAKE_EXTRA_OPTS "${MRUBY_RAKE_EXTRA_OPTS} ANDROID_NDK_HOME=${ANDROID_NDK_HOME}")
+    # mruby must use the NDK the app compiles with; the environment is a fallback.
+    if(ANDROID)
+        if(CMAKE_ANDROID_NDK)
+            list(APPEND MRUBY_RAKE_EXTRA_OPTS "ANDROID_NDK_HOME=${CMAKE_ANDROID_NDK}")
+        elseif(DEFINED ENV{ANDROID_NDK_HOME})
+            list(APPEND MRUBY_RAKE_EXTRA_OPTS "ANDROID_NDK_HOME=$ENV{ANDROID_NDK_HOME}")
+        endif()
     endif()
 
     include(ExternalProject)

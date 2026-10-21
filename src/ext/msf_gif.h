@@ -266,16 +266,16 @@ static void msf_cook_frame(MsfCookedFrame * frame, uint8_t * raw, uint8_t * used
                            int width, int height, int pitch, int depth)
 { MsfTimeFunc
     //bit depth for each channel
-    const static int rdepthsArray[17] = { 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5 };
-    const static int gdepthsArray[17] = { 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6 };
-    const static int bdepthsArray[17] = { 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5 };
+    static const int rdepthsArray[17] = { 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5 };
+    static const int gdepthsArray[17] = { 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6 };
+    static const int bdepthsArray[17] = { 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5 };
     //this extra level of indirection looks unnecessary but we need to explicitly decay the arrays to pointers
     //in order to be able to swap them because of C's annoying not-quite-pointers, not-quite-value-types stack arrays.
     const int * rdepths = msf_gif_bgra_flag? bdepthsArray : rdepthsArray;
     const int * gdepths =                                   gdepthsArray;
     const int * bdepths = msf_gif_bgra_flag? rdepthsArray : bdepthsArray;
 
-    const static int ditherKernel[16] = {
+    static const int ditherKernel[16] = {
          0 << 12,  8 << 12,  2 << 12, 10 << 12,
         12 << 12,  4 << 12, 14 << 12,  6 << 12,
          3 << 12, 11 << 12,  1 << 12,  9 << 12,
@@ -346,11 +346,11 @@ static void msf_cook_frame(MsfCookedFrame * frame, uint8_t * raw, uint8_t * used
                 }
 
                 int dx = x & 3, dy = y & 3;
-                int k = ditherKernel[dy * 4 + dx];
+                int dither = ditherKernel[dy * 4 + dx];
                 cooked[y * width + x] =
-                    (msf_imin(65535, p[2] * bmul + (k >> bbits)) >> (16 - rbits - gbits - bbits) & bmask) |
-                    (msf_imin(65535, p[1] * gmul + (k >> gbits)) >> (16 - rbits - gbits        ) & gmask) |
-                     msf_imin(65535, p[0] * rmul + (k >> rbits)) >> (16 - rbits                );
+                    (msf_imin(65535, p[2] * bmul + (dither >> bbits)) >> (16 - rbits - gbits - bbits) & bmask) |
+                    (msf_imin(65535, p[1] * gmul + (dither >> gbits)) >> (16 - rbits - gbits        ) & gmask) |
+                     msf_imin(65535, p[0] * rmul + (dither >> rbits)) >> (16 - rbits                );
             }
         }
 
@@ -408,7 +408,8 @@ static inline void msf_lzw_reset(MsfStridedList * lzw, int tableSize, int stride
 //PERF TODO: is it possible to use the same array for both `used` and `tlb`?
 static MsfGifBuffer * msf_compress_frame(void * allocContext, int width, int height, int centiSeconds,
                                          MsfCookedFrame frame, MsfGifState * handle, uint8_t * used, uint8_t * tlb, int16_t * lzwMem)
-{ MsfTimeFunc
+{
+    (void)allocContext; MsfTimeFunc
     //NOTE: We reserve enough memory for the theoretical worst case upfront because it's a reasonable amount,
     //      and prevents us from ever having to check size or realloc during compression.
     //NOTE: headers + color table + 12 bits per pixel (since 12 bits is the maximum code size)
@@ -417,7 +418,7 @@ static MsfGifBuffer * msf_compress_frame(void * allocContext, int width, int hei
     MsfGifBuffer * buffer = (MsfGifBuffer *) MSF_GIF_MALLOC(allocContext, maxBufSize);
     if (!buffer) { return NULL; }
     uint8_t * writeHead = buffer->data;
-    MsfStridedList lzw = { lzwMem };
+    MsfStridedList lzw = { .data = lzwMem };
 
     //allocate tlb
     int totalBits = frame.rbits + frame.gbits + frame.bbits;
@@ -431,7 +432,7 @@ static MsfGifBuffer * msf_compress_frame(void * allocContext, int width, int hei
     tlb[tlbSize-1] = 0;
     MsfTimeLoop("table") for (int i = 0; i < tlbSize-1; ++i) {
         if (used[i]) {
-            tlb[i] = tableIdx;
+            tlb[i] = (uint8_t)(tableIdx);
             int rmask = (1 << frame.rbits) - 1;
             int gmask = (1 << frame.gbits) - 1;
             //isolate components
@@ -442,9 +443,9 @@ static MsfGifBuffer * msf_compress_frame(void * allocContext, int width, int hei
             r <<= 8 - frame.rbits;
             g <<= 8 - frame.gbits;
             b <<= 8 - frame.bbits;
-            table[tableIdx].r = r | r >> frame.rbits | r >> (frame.rbits * 2) | r >> (frame.rbits * 3);
-            table[tableIdx].g = g | g >> frame.gbits | g >> (frame.gbits * 2) | g >> (frame.gbits * 3);
-            table[tableIdx].b = b | b >> frame.bbits | b >> (frame.bbits * 2) | b >> (frame.bbits * 3);
+            table[tableIdx].r = (uint8_t)(r | r >> frame.rbits | r >> (frame.rbits * 2) | r >> (frame.rbits * 3));
+            table[tableIdx].g = (uint8_t)(g | g >> frame.gbits | g >> (frame.gbits * 2) | g >> (frame.gbits * 3));
+            table[tableIdx].b = (uint8_t)(b | b >> frame.bbits | b >> (frame.bbits * 2) | b >> (frame.bbits * 3));
             if (msf_gif_bgra_flag) {
                 uint8_t temp = table[tableIdx].r;
                 table[tableIdx].r = table[tableIdx].b;
@@ -482,7 +483,7 @@ static MsfGifBuffer * msf_compress_frame(void * allocContext, int width, int hei
     //write Local Color Table
     memcpy(writeHead, table, tableSize * sizeof(Color3));
     writeHead += tableSize * sizeof(Color3);
-    *writeHead++ = tableBits;
+    *writeHead++ = (uint8_t)(tableBits);
 
     //prep first Image Data block (analogous to what we do at the end of msf_put_code())
     memset(writeHead, 0, 256 + 4); //we write up to 4 bytes ahead of the end of the block - see msf_put_code()
@@ -508,7 +509,7 @@ static MsfGifBuffer * msf_compress_frame(void * allocContext, int width, int hei
                 msf_put_code(&writeHead, &blockBits, codeBits, tableSize);
                 msf_lzw_reset(&lzw, tableSize, tableIdx);
             } else {
-                (&lzw.data[lastCode * lzw.stride])[color] = lzw.len;
+                (&lzw.data[lastCode * lzw.stride])[color] = (int16_t)(lzw.len);
                 ++lzw.len;
             }
 
@@ -525,7 +526,7 @@ static MsfGifBuffer * msf_compress_frame(void * allocContext, int width, int hei
     //flush remaining data
     if (blockBits > 8) {
         int bytes = (blockBits + 7) / 8; //round up
-        writeHead[0] = bytes - 1;
+        writeHead[0] = (uint8_t)(bytes - 1);
         writeHead += bytes;
     }
     *writeHead++ = 0; //terminating block

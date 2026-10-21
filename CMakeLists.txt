@@ -23,13 +23,9 @@ message("PROJECT_VERSION: ${PROJECT_VERSION}${VERSION_STATUS}")
 message("VERSION_HASH: ${VERSION_HASH}")
 
 configure_file("${PROJECT_SOURCE_DIR}/version.h.in" "${CMAKE_CURRENT_BINARY_DIR}/version.h")
-include(cmake/runtime_versions.cmake)
 
-if(ANDROID OR EMSCRIPTEN OR NINTENDO_3DS OR NINTENDO_SWITCH OR BAREMETALPI)
-    set(BUILD_STATIC_DEFAULT ON)
-else()
-    set(BUILD_STATIC_DEFAULT OFF)
-endif()
+# The static runtime is what every artifact the project ships is built with.
+set(BUILD_STATIC_DEFAULT ON)
 
 set(BUILD_PLAYER_DEFAULT OFF)
 set(BUILD_LIBRETRO_DEFAULT OFF)
@@ -47,13 +43,29 @@ option(BUILD_RENDER_CACHE "Build with render cache optimization" OFF)
 if(BUILD_RENDER_CACHE)
     add_definitions(-DBUILD_RENDER_CACHE)
 endif()
-option(BUILD_SDL "SDL Enabled" ON)
-option(BUILD_SOKOL "Sokol Enabled" OFF)
+# Sokol is the layer the desktop ships and the web has built since the browser
+# change; the platforms below cannot build it and keep the SDL default.
+if(ANDROID OR NINTENDO_3DS OR NINTENDO_SWITCH OR BAREMETALPI OR RPI OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+    set(BUILD_SDL_DEFAULT ON)
+    set(BUILD_SOKOL_DEFAULT OFF)
+else()
+    set(BUILD_SDL_DEFAULT OFF)
+    set(BUILD_SOKOL_DEFAULT ON)
+endif()
+
+option(BUILD_SDL "SDL Enabled" ${BUILD_SDL_DEFAULT})
+option(BUILD_SOKOL "Sokol Enabled" ${BUILD_SOKOL_DEFAULT})
+option(BUILD_SOKOL_WGPU "Sokol WebGPU backend (browser builds)" OFF)
 if(BUILD_APPLE)
     set(BUILD_SDL OFF)
+    set(BUILD_SOKOL OFF)
 endif()
 if(BUILD_SDL AND BUILD_SOKOL)
     message(FATAL_ERROR "BUILD_SDL and BUILD_SOKOL are two system layers: enable exactly one")
+endif()
+# WebGPU is the Emscripten sokol backend; elsewhere it would be silently ignored.
+if(BUILD_SOKOL_WGPU AND NOT (EMSCRIPTEN AND BUILD_SOKOL))
+    message(FATAL_ERROR "BUILD_SOKOL_WGPU is the Emscripten sokol backend: enable it with BUILD_SOKOL, for the browser")
 endif()
 option(BUILD_SDLGPU "SDL GPU Enabled" OFF)
 option(BUILD_LIBRETRO "libretro Enabled" ${BUILD_LIBRETRO_DEFAULT})
@@ -105,6 +117,7 @@ target_compile_definitions(runtime INTERFACE BUILD_DEPRECATED)
 message("PREFER_SYSTEM_LIBRARIES: ${PREFER_SYSTEM_LIBRARIES}")
 message("BUILD_STATIC: ${BUILD_STATIC}")
 message("BUILD_SDLGPU: ${BUILD_SDLGPU}")
+message("BUILD_SOKOL_WGPU: ${BUILD_SOKOL_WGPU}")
 message("BUILD_TOUCH_INPUT: ${BUILD_TOUCH_INPUT}")
 message("BUILD_WITH_ALL: ${BUILD_WITH_ALL}")
 
@@ -183,6 +196,7 @@ endif()
 set(THIRDPARTY_DIR ${CMAKE_SOURCE_DIR}/vendor)
 set(DEMO_CARTS_IN ${CMAKE_SOURCE_DIR}/demos)
 
+include(cmake/warnings.cmake)
 include(cmake/gif.cmake)
 include(cmake/blipbuf.cmake)
 include(cmake/zlib.cmake)
@@ -201,8 +215,11 @@ include(cmake/squirrel.cmake)
 include(cmake/pocketpy.cmake)
 include(cmake/quickjs.cmake)
 include(cmake/janet.cmake)
+include(cmake/gravity.cmake)
 include(cmake/forth.cmake)
 include(cmake/miniscript.cmake)
+
+include(cmake/runtime_versions.cmake)
 
 # After the languages: the tools check what those options came out as.
 include(cmake/tools.cmake)
@@ -222,5 +239,25 @@ include(cmake/apple.cmake)
 include(cmake/libretro.cmake)
 include(cmake/n3ds.cmake)
 include(cmake/nswitch.cmake)
+
+# The Linux desktop entry, its icon and the mime type belong to the app, not
+# to the layer; a build with no layer at all has no binary to install.
+if(LINUX AND TARGET ${TIC80_TARGET})
+
+    configure_file("${PROJECT_SOURCE_DIR}/build/linux/tic80.desktop.in" "${PROJECT_SOURCE_DIR}/build/linux/tic80.desktop")
+
+    install(TARGETS ${TIC80_TARGET} DESTINATION bin)
+
+    set(TIC80_DESKTOP_DIR       "share/applications/")
+    set(TIC80_MIME_DIR          "share/mime/packages/")
+    set(TIC80_PIXMAPS_DIR       "share/icons/hicolor/256x256/apps")
+    set(TIC80_MIMETYPE_ICON_DIR "share/icons/hicolor/256x256/mimetypes")
+
+    install(FILES ${PROJECT_SOURCE_DIR}/build/linux/tic80.desktop DESTINATION ${TIC80_DESKTOP_DIR})
+    install(FILES ${PROJECT_SOURCE_DIR}/build/linux/tic80.xml DESTINATION ${TIC80_MIME_DIR})
+    install(FILES ${PROJECT_SOURCE_DIR}/build/linux/tic80.png DESTINATION ${TIC80_PIXMAPS_DIR})
+    install(FILES ${PROJECT_SOURCE_DIR}/build/linux/tic80.png DESTINATION ${TIC80_MIMETYPE_ICON_DIR} RENAME application-x-tic80-item.png)
+
+endif()
 
 include(cmake/install.cmake)

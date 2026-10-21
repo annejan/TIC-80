@@ -27,15 +27,15 @@
 
 typedef struct
 {
-    u32    page_orig;
-    u32    bank_orig;
-    u32    nb_pages;
-    u32    bank_size;
-    u32    sheet_width;
-    u32    tile_width;
+    u32 page_orig;
+    u32 bank_orig;
+    u32 nb_pages;
+    u32 bank_size;
+    u32 sheet_width;
+    u32 tile_width;
     size_t ptr_size;
-    u8     (*peek)(const void*, u32);
-    void   (*poke)(void*, u32, u8);
+    u8 (*peek)(const void*, u32);
+    void (*poke)(void*, u32, u8);
 } tic_blit_segment;
 
 typedef struct
@@ -57,28 +57,28 @@ tic_tileptr tic_tilesheet_gettile(const tic_tilesheet* sheet, s32 index, bool lo
 inline u8 tic_tilesheet_getpix(const tic_tilesheet* sheet, s32 x, s32 y)
 {
     s32 bank_offset, page_offset;
-    bank_offset = (((y>>7) + sheet->segment->bank_orig) & 1) << 8;
-    page_offset = ((((x>>7) + sheet->segment->page_orig) % sheet->segment->nb_pages) << 4) / sheet->segment->nb_pages;
+    bank_offset = (((y >> 7) + sheet->segment->bank_orig) & 1) << 8;
+    page_offset = ((((x >> 7) + sheet->segment->page_orig) % sheet->segment->nb_pages) << 4) / sheet->segment->nb_pages;
 
     // tile coord
-    u16 tile_index = bank_offset + (((y & 127) >> 3) << 4 ) + page_offset + ((x & 127) / sheet->segment->tile_width);
+    u16 tile_index = (u16)(bank_offset + (((y & 127) >> 3) << 4) + page_offset + ((x & 127) / sheet->segment->tile_width));
 
     // coord in tile
-    u32 pix_addr = ((x & (sheet->segment->tile_width - 1)) + ((y & 7) * sheet->segment->tile_width)) ;
-    return sheet->segment->peek(sheet->ptr+tile_index * sheet->segment->ptr_size, pix_addr);
+    u32 pix_addr = ((x & (sheet->segment->tile_width - 1)) + ((y & 7) * sheet->segment->tile_width));
+    return sheet->segment->peek(sheet->ptr + tile_index * sheet->segment->ptr_size, pix_addr);
 }
 
 inline void tic_tilesheet_setpix(const tic_tilesheet* sheet, s32 x, s32 y, u8 value)
 {
     s32 bank_offset, page_offset;
-    bank_offset = ((((y>>7) + sheet->segment->bank_orig) & 1) << 8);
-    page_offset = ((((x>>7) + sheet->segment->page_orig) % sheet->segment->nb_pages) << 4) / sheet->segment->nb_pages;
+    bank_offset = ((((y >> 7) + sheet->segment->bank_orig) & 1) << 8);
+    page_offset = ((((x >> 7) + sheet->segment->page_orig) % sheet->segment->nb_pages) << 4) / sheet->segment->nb_pages;
 
     // tile coord
-    u16 tile_index = bank_offset + (((y & 127) >> 3) << 4 ) + page_offset + ((x & 127) / sheet->segment->tile_width);
+    u16 tile_index = (u16)(bank_offset + (((y & 127) >> 3) << 4) + page_offset + ((x & 127) / sheet->segment->tile_width));
 
     // coord in tile
-    u32 pix_addr = ((x & (sheet->segment->tile_width - 1)) + ((y & 7) * sheet->segment->tile_width)) ;
+    u32 pix_addr = ((x & (sheet->segment->tile_width - 1)) + ((y & 7) * sheet->segment->tile_width));
     sheet->segment->poke(sheet->ptr + tile_index * sheet->segment->ptr_size, pix_addr, value);
 }
 
@@ -92,6 +92,32 @@ inline void tic_tilesheet_settilepix(const tic_tileptr* tile, s32 x, s32 y, u8 v
 {
     u32 addr = tile->offset + x + (y * tile->segment->tile_width);
     tile->segment->poke(tile->ptr, addr, value);
+}
+
+// The same pixels for a flat sheet: the cart's own tile array, addressed by the
+// sheet's coordinates rather than through a segment.
+static inline u8 tic_tilesheet_getflatpix(const tic_tile* tiles, s32 x, s32 y)
+{
+    // TODO: check spritesheet rect
+    enum
+    {
+        SheetCols = (TIC_SPRITESHEET_SIZE / TIC_SPRITESIZE)
+    };
+    const tic_tile* tile = &tiles[x / TIC_SPRITESIZE + y / TIC_SPRITESIZE * SheetCols];
+
+    return tic_tool_peek4(tile->data, (x % TIC_SPRITESIZE) + (y % TIC_SPRITESIZE) * TIC_SPRITESIZE);
+}
+
+static inline void tic_tilesheet_setflatpix(tic_tile* tiles, s32 x, s32 y, u8 value)
+{
+    // TODO: check spritesheet rect
+    enum
+    {
+        SheetCols = (TIC_SPRITESHEET_SIZE / TIC_SPRITESIZE)
+    };
+    tic_tile* tile = &tiles[x / TIC_SPRITESIZE + y / TIC_SPRITESIZE * SheetCols];
+
+    tic_tool_poke4(tile->data, (x % TIC_SPRITESIZE) + (y % TIC_SPRITESIZE) * TIC_SPRITESIZE, value);
 }
 
 typedef struct
@@ -110,7 +136,7 @@ inline s32 tic_blit_calc_segment(const tic_blit* blit)
 inline void tic_blit_update_bpp(tic_blit* blit, tic_bpp bpp)
 {
     blit->mode = bpp;
-    blit->pages = 4 / bpp;
+    blit->pages = (u8)(4 / bpp);
     blit->page %= blit->pages;
 }
 
