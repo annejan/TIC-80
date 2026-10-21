@@ -11,8 +11,6 @@ dependencies:
   # where the axes, the hat switch and the buttons sit in them.
   espressif/usb_host_hid: "^1.2.1"
   badgeteam/hid-host: "^0.3.0"
-  # Certificate bundle, for talking to tic80.com over HTTPS.
-  badgeteam/custom-certificates: "=1.1.0"
   # Boot selection, which is how the launcher hands a cart to TIC-80 when a
   # repository app names it as its interpreter.
   badgeteam/appfs: "=2.1.0"
