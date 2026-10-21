@@ -159,6 +159,43 @@ The launcher takes the name, description and icon from that metadata; without
 it the app still runs but shows the default icon. `appfs/icon32.png` is
 TIC-80's own artwork, resized from `build/linux/tic80.png`.
 
+## Carts as apps
+
+A cart can have its own entry in the launcher's Apps menu, the same way
+Graceloader runs its apps: a repository app of type `script` that names
+TIC-80 as its interpreter and the cart as its executable.
+
+```json
+"application": [{
+  "targets": ["tanmatsu", "konsool"],
+  "revision": 1,
+  "type": "script",
+  "interpreter": "com.annejan.tic80",
+  "executable": "game.tic",
+  "assets": [{"source_file": "game.tic", "target_file": "game.tic"}]
+}]
+```
+
+The launcher installs the cart to `<sd or int>/apps/<slug>/game.tic`, and when
+the app is opened it boots TIC-80 with that path as the AppFS boot argument.
+TIC-80 loads the cart and plays it after the splash; Esc and CLOSE GAME drop
+to the console with the cart loaded. When TIC-80 is missing, the launcher
+offers to install it first.
+
+Verified on hardware on 2026-10-21 with `tetris.tic` as a script app in
+`/int/apps`: opening it from Apps plays the cart, CLOSE GAME reaches the
+console, and a plain launch of TIC-80 still opens the studio.
+
+A plain launch of TIC-80 passes the app's own directory as the argument, so
+only a path to a regular file counts as a cart. The argument holds at most 127
+characters.
+
+To try a cart without the launcher, badgelink passes the argument directly:
+
+```sh
+./badgelink.sh start com.annejan.tic80 /int/apps/<slug>/game.tic
+```
+
 ## Verified on hardware
 
 Run on a Tanmatsu on 2026-08-20, installed into AppFS with badgelink. Working:

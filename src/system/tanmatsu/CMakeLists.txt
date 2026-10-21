@@ -44,6 +44,8 @@ idf_component_register(
         mbedtls
         wifi-manager
         tanmatsu-wifi
+        # The launcher's boot argument, for carts started from the Apps menu.
+        appfs
 )
 
 target_compile_definitions(${COMPONENT_LIB} PUBLIC ${TIC80_TANMATSU_DEFINITIONS})

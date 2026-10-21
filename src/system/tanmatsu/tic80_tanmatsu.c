@@ -25,7 +25,9 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
+#include "appfs.h"
 #include "bsp/device.h"
 #include "bsp/display.h"
 #include "esp_log.h"
@@ -203,6 +205,34 @@ static esp_err_t initialize_hardware(void)
     return ESP_OK;
 }
 
+// The cart the launcher started TIC-80 with, or NULL.
+//
+// A repository app of type "script" names TIC-80 as its interpreter and a
+// cart as its executable. The launcher then boots TIC-80 with the cart's full
+// path as the AppFS boot argument, the same way Graceloader receives its
+// apps. A plain launch passes the app's own directory instead, so only a
+// regular file counts as a cart. The studio exits on a cart it cannot load,
+// which here would be a crash, so the file has to exist before it is named.
+static const char* launched_cart(void)
+{
+    static char path[APPFS_MAX_ARG_LENGTH + 1];
+    char const* arg = NULL;
+
+    if(appfsBootselGet(NULL, &arg) == APPFS_INVALID_FD || arg == NULL || arg[0] == '\0')
+    {
+        return NULL;
+    }
+
+    struct stat st;
+    if(stat(arg, &st) != 0 || !S_ISREG(st.st_mode))
+    {
+        return NULL;
+    }
+
+    snprintf(path, sizeof(path), "%s", arg);
+    return path;
+}
+
 void tic80_tanmatsu_main(void)
 {
     if(initialize_hardware() != ESP_OK)
@@ -224,10 +254,16 @@ void tic80_tanmatsu_main(void)
         ESP_LOGW(TAG, "Continuing without sound");
     }
 
-    char* argv[] = {"tic80", NULL};
+    const char* cart = launched_cart();
+    char* argv[] = {"tic80", (char*)cart, NULL};
     const char* root = tanmatsu_storage_root();
 
-    platform.studio = studio_create(1, argv, TIC80_SAMPLERATE, TIC80_PIXEL_COLOR_BGRA8888, root, INT32_MAX,
+    if(cart != NULL)
+    {
+        ESP_LOGI(TAG, "Launched with cart %s", cart);
+    }
+
+    platform.studio = studio_create(cart != NULL ? 2 : 1, argv, TIC80_SAMPLERATE, TIC80_PIXEL_COLOR_BGRA8888, root, INT32_MAX,
                                     tic_layout_qwerty);
     if(platform.studio == NULL)
     {

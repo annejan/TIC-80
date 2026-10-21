@@ -13,3 +13,6 @@ dependencies:
   badgeteam/hid-host: "^0.3.0"
   # Certificate bundle, for talking to tic80.com over HTTPS.
   badgeteam/custom-certificates: "=1.1.0"
+  # Boot selection, which is how the launcher hands a cart to TIC-80 when a
+  # repository app names it as its interpreter.
+  badgeteam/appfs: "=2.1.0"
