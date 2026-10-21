@@ -190,17 +190,15 @@ Two things about that are worth knowing, because both cost an evening:
   `deinit` callbacks or `esp_vfs_fat_sdmmc_mount` fails with "no available sd
   host controller" and the card silently disappears. See `storage.c`.
 
-Confirmed on hardware up to the point of a socket: the radio comes up, joins a
-stored network, gets a lease, and TIC-80 keeps running at 60 fps throughout,
-with failures staying failures rather than hangs. Actually fetching from
-tic80.com is still unproven; the network it was tried on refused the connection.
+Confirmed on hardware: the radio comes up, joins a stored network and gets a
+lease, surf lists the site and downloaded carts run, and TIC-80 keeps running at
+60 fps throughout, with failures staying failures rather than hangs.
 
 Which site it talks to follows the build, as it does upstream: a build whose
 checkout sits exactly on a `vX.Y.Z` tag is a release and talks to tic80.com,
 and anything else is a dev snapshot and talks to dev.tic80.com (`TIC_HOST` in
-`src/studio/system.h`, set from `cmake/version.cmake`). The pinned root in
-`certs/` was only checked against tic80.com, so on a dev build a handshake
-failing with -0x3000 points there first.
+`src/studio/system.h`, set from `cmake/version.cmake`). Both hosts serve the
+same `*.tic80.com` certificate, so the pinned root in `certs/` covers either.
 
 ## What is not here
 
