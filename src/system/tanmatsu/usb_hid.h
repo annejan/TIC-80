@@ -37,19 +37,20 @@
 
 // What the plugged-in devices have reported since the last poll. Movement and
 // scrolling are deltas; everything else is the state as it stands.
-typedef struct {
-    bool keyboard;  // A keyboard is plugged in
-    bool mouse;     // A mouse is plugged in
-    bool gamepad;   // A gamepad is plugged in
+typedef struct
+{
+    bool keyboard; // A keyboard is plugged in
+    bool mouse;    // A mouse is plugged in
+    bool gamepad;  // A gamepad is plugged in
 
     bool keys[tic_keys_count];
 
     int32_t mouse_dx;
     int32_t mouse_dy;
     int32_t mouse_scroll;
-    bool    mouse_left;
-    bool    mouse_middle;
-    bool    mouse_right;
+    bool mouse_left;
+    bool mouse_middle;
+    bool mouse_right;
 
     // The tic80_gamepad bits - up, down, left, right, a, b, x, y - one entry
     // per pad, in the order they were plugged in. A pad keeps its player for

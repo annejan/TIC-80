@@ -5,6 +5,7 @@
 
 #include "tanmatsu.h"
 
-void app_main(void) {
+void app_main(void)
+{
     tic80_tanmatsu_main();
 }

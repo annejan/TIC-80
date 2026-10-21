@@ -42,23 +42,24 @@
 
 static char const TAG[] = "tic80-storage";
 
-#define INTERNAL_MOUNT_POINT  "/int"
-#define INTERNAL_PARTITION    "locfd"
-#define SD_MOUNT_POINT        "/sd"
-#define TIC80_DIRECTORY       "tic80"
+#define INTERNAL_MOUNT_POINT "/int"
+#define INTERNAL_PARTITION   "locfd"
+#define SD_MOUNT_POINT       "/sd"
+#define TIC80_DIRECTORY      "tic80"
 
-static wl_handle_t          wl_handle     = WL_INVALID_HANDLE;
-static sdmmc_card_t*        card          = NULL;
+static wl_handle_t wl_handle = WL_INVALID_HANDLE;
+static sdmmc_card_t* card = NULL;
 static sd_pwr_ctrl_handle_t sd_pwr_handle = NULL;
-static char                 root[64]      = INTERNAL_MOUNT_POINT "/" TIC80_DIRECTORY;
+static char root[64] = INTERNAL_MOUNT_POINT "/" TIC80_DIRECTORY;
 
-static esp_err_t mount_internal(void) {
+static esp_err_t mount_internal(void)
+{
     esp_vfs_fat_mount_config_t config = {
-        .format_if_mount_failed   = false,
-        .max_files                = 10,
-        .allocation_unit_size     = CONFIG_WL_SECTOR_SIZE,
+        .format_if_mount_failed = false,
+        .max_files = 10,
+        .allocation_unit_size = CONFIG_WL_SECTOR_SIZE,
         .disk_status_check_enable = false,
-        .use_one_fat              = false,
+        .use_one_fat = false,
     };
 
     return esp_vfs_fat_spiflash_mount_rw_wl(INTERNAL_MOUNT_POINT, INTERNAL_PARTITION, &config, &wl_handle);
@@ -78,29 +79,33 @@ static esp_err_t mount_internal(void) {
 #endif
 
 #if SDCARD_HOSTED_OWNS_THE_HOST
-static esp_err_t sdmmc_host_init_noop(void) {
+static esp_err_t sdmmc_host_init_noop(void)
+{
     return ESP_OK;
 }
 
-static esp_err_t sdmmc_host_deinit_noop(void) {
+static esp_err_t sdmmc_host_deinit_noop(void)
+{
     return ESP_OK;
 }
 #endif
 
-static esp_err_t power_cycle_sd_card(void) {
+static esp_err_t power_cycle_sd_card(void)
+{
     gpio_config_t gpio_cfg = {
         .pin_bit_mask = BIT64(GPIO_NUM_39) | BIT64(GPIO_NUM_40) | BIT64(GPIO_NUM_41) | BIT64(GPIO_NUM_42) |
                         BIT64(GPIO_NUM_43) | BIT64(GPIO_NUM_44),
-        .mode         = GPIO_MODE_OUTPUT_OD,
-        .pull_up_en   = GPIO_PULLUP_DISABLE,
+        .mode = GPIO_MODE_OUTPUT_OD,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type    = GPIO_INTR_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
     };
     gpio_config(&gpio_cfg);
 
     static const gpio_num_t bus_pins[] = {GPIO_NUM_39, GPIO_NUM_40, GPIO_NUM_41,
                                           GPIO_NUM_42, GPIO_NUM_43, GPIO_NUM_44};
-    for (size_t i = 0; i < sizeof(bus_pins) / sizeof(bus_pins[0]); i++) {
+    for(size_t i = 0; i < sizeof(bus_pins) / sizeof(bus_pins[0]); i++)
+    {
         gpio_set_level(bus_pins[i], 0);
     }
 
@@ -115,51 +120,55 @@ static esp_err_t power_cycle_sd_card(void) {
     return ESP_OK;
 }
 
-static esp_err_t mount_sd_card(void) {
+static esp_err_t mount_sd_card(void)
+{
     sd_pwr_ctrl_ldo_config_t ldo_config = {
         .ldo_chan_id = 4,
     };
 
     esp_err_t res = sd_pwr_ctrl_new_on_chip_ldo(&ldo_config, &sd_pwr_handle);
-    if (res != ESP_OK) {
+    if(res != ESP_OK)
+    {
         ESP_LOGW(TAG, "No on-chip LDO for the SD card: %s", esp_err_to_name(res));
         return res;
     }
 
     power_cycle_sd_card();
 
-    sdmmc_host_t host    = SDMMC_HOST_DEFAULT();
-    host.slot            = SDMMC_HOST_SLOT_0;
-    host.max_freq_khz    = SDMMC_FREQ_HIGHSPEED;
+    sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+    host.slot = SDMMC_HOST_SLOT_0;
+    host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
     host.pwr_ctrl_handle = sd_pwr_handle;
 
 #if SDCARD_HOSTED_OWNS_THE_HOST
-    host.init   = &sdmmc_host_init_noop;
+    host.init = &sdmmc_host_init_noop;
     host.deinit = &sdmmc_host_deinit_noop;
 #endif
 
     static uint8_t* dma_buf = NULL;
-    if (dma_buf == NULL) {
+    if(dma_buf == NULL)
+    {
         dma_buf = heap_caps_malloc(512 * 4, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-        if (dma_buf == NULL) {
+        if(dma_buf == NULL)
+        {
             return ESP_ERR_NO_MEM;
         }
     }
     host.dma_aligned_buffer = dma_buf;
 
     sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
-    slot_config.clk                 = GPIO_NUM_43;
-    slot_config.cmd                 = GPIO_NUM_44;
-    slot_config.d0                  = GPIO_NUM_39;
-    slot_config.d1                  = GPIO_NUM_40;
-    slot_config.d2                  = GPIO_NUM_41;
-    slot_config.d3                  = GPIO_NUM_42;
-    slot_config.width               = 4;
+    slot_config.clk = GPIO_NUM_43;
+    slot_config.cmd = GPIO_NUM_44;
+    slot_config.d0 = GPIO_NUM_39;
+    slot_config.d1 = GPIO_NUM_40;
+    slot_config.d2 = GPIO_NUM_41;
+    slot_config.d3 = GPIO_NUM_42;
+    slot_config.width = 4;
 
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
         .format_if_mount_failed = false,
-        .max_files              = 10,
-        .allocation_unit_size   = 16 * 1024,
+        .max_files = 10,
+        .allocation_unit_size = 16 * 1024,
     };
 
     return esp_vfs_fat_sdmmc_mount(SD_MOUNT_POINT, &host, &slot_config, &mount_config, &card);
@@ -167,19 +176,23 @@ static esp_err_t mount_sd_card(void) {
 
 #else
 
-static esp_err_t mount_sd_card(void) {
+static esp_err_t mount_sd_card(void)
+{
     return ESP_ERR_NOT_SUPPORTED;
 }
 
 #endif
 
-static bool ensure_directory(const char* path) {
+static bool ensure_directory(const char* path)
+{
     struct stat info;
-    if (stat(path, &info) == 0) {
+    if(stat(path, &info) == 0)
+    {
         return true;
     }
 
-    if (mkdir(path, 0777) != 0) {
+    if(mkdir(path, 0777) != 0)
+    {
         ESP_LOGW(TAG, "Could not create %s", path);
         return false;
     }
@@ -187,34 +200,44 @@ static bool ensure_directory(const char* path) {
     return true;
 }
 
-esp_err_t tanmatsu_storage_init(void) {
+esp_err_t tanmatsu_storage_init(void)
+{
     bool have_internal = false;
 
     esp_err_t res = mount_internal();
-    if (res == ESP_OK) {
+    if(res == ESP_OK)
+    {
         have_internal = true;
         ESP_LOGI(TAG, "Internal filesystem mounted at " INTERNAL_MOUNT_POINT);
-    } else {
+    }
+    else
+    {
         ESP_LOGW(TAG, "Failed to mount the internal filesystem: %s", esp_err_to_name(res));
     }
 
     // Carts live on the SD card when there is one; it is bigger and it is what
     // people can take out and copy files onto.
     esp_err_t sd = mount_sd_card();
-    if (sd == ESP_OK) {
+    if(sd == ESP_OK)
+    {
         ESP_LOGI(TAG, "SD card mounted at " SD_MOUNT_POINT);
         snprintf(root, sizeof(root), SD_MOUNT_POINT "/" TIC80_DIRECTORY);
-    } else if (have_internal) {
+    }
+    else if(have_internal)
+    {
         // Worth saying out loud: carts saved on the card are not missing, they
         // are simply not reachable, and anything saved now goes elsewhere.
         ESP_LOGW(TAG, "No SD card (%s), using internal flash instead", esp_err_to_name(sd));
         snprintf(root, sizeof(root), INTERNAL_MOUNT_POINT "/" TIC80_DIRECTORY);
-    } else {
+    }
+    else
+    {
         ESP_LOGE(TAG, "No writable filesystem, TIC-80 will not be able to save");
         return ESP_FAIL;
     }
 
-    if (!ensure_directory(root)) {
+    if(!ensure_directory(root))
+    {
         return ESP_FAIL;
     }
 
@@ -223,6 +246,7 @@ esp_err_t tanmatsu_storage_init(void) {
     return ESP_OK;
 }
 
-const char* tanmatsu_storage_root(void) {
+const char* tanmatsu_storage_root(void)
+{
     return root;
 }

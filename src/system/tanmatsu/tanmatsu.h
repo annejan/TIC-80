@@ -30,58 +30,59 @@
 #include "tic80.h"
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-// Entry point, called from the project's main component.
-void tic80_tanmatsu_main(void);
+    // Entry point, called from the project's main component.
+    void tic80_tanmatsu_main(void);
 
-// ---------------------------------------------------------------------------
-// Display: scales the 256x144 TIC-80 output 3x into the middle of the panel.
-// ---------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
+    // Display: scales the 256x144 TIC-80 output 3x into the middle of the panel.
+    // ---------------------------------------------------------------------------
 
-esp_err_t tanmatsu_display_init(void);
+    esp_err_t tanmatsu_display_init(void);
 
-// screen points at TIC80_FULLWIDTH * TIC80_FULLHEIGHT pixels in
-// TIC80_PIXEL_COLOR_RGBA8888 format.
-void tanmatsu_display_present(const uint32_t* screen);
+    // screen points at TIC80_FULLWIDTH * TIC80_FULLHEIGHT pixels in
+    // TIC80_PIXEL_COLOR_RGBA8888 format.
+    void tanmatsu_display_present(const uint32_t* screen);
 
-// ---------------------------------------------------------------------------
-// Audio: 44100 Hz, 16 bit, stereo, interleaved, straight to the I2S codec.
-// ---------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
+    // Audio: 44100 Hz, 16 bit, stereo, interleaved, straight to the I2S codec.
+    // ---------------------------------------------------------------------------
 
-esp_err_t tanmatsu_audio_init(void);
+    esp_err_t tanmatsu_audio_init(void);
 
-// count is the number of samples (not frames, not bytes). Blocks until the
-// codec has taken them, which is what paces the main loop.
-void tanmatsu_audio_write(const int16_t* samples, size_t count);
+    // count is the number of samples (not frames, not bytes). Blocks until the
+    // codec has taken them, which is what paces the main loop.
+    void tanmatsu_audio_write(const int16_t* samples, size_t count);
 
-void tanmatsu_audio_set_volume(int32_t percent);
+    void tanmatsu_audio_set_volume(int32_t percent);
 
-// ---------------------------------------------------------------------------
-// Input: the built-in keyboard, plus a mouse pointer driven with Fn + arrows.
-// ---------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
+    // Input: the built-in keyboard, plus a mouse pointer driven with Fn + arrows.
+    // ---------------------------------------------------------------------------
 
-esp_err_t tanmatsu_input_init(void);
+    esp_err_t tanmatsu_input_init(void);
 
-// Drains the BSP event queue and updates input in place.
-void tanmatsu_input_poll(tic80_input* input);
+    // Drains the BSP event queue and updates input in place.
+    void tanmatsu_input_poll(tic80_input* input);
 
-// Pops one typed character, for tic_sys_keyboard_text().
-bool tanmatsu_input_text(char* out);
+    // Pops one typed character, for tic_sys_keyboard_text().
+    bool tanmatsu_input_text(char* out);
 
-// True once the user asked to leave (Fn+Esc, or the power button).
-bool tanmatsu_input_quit(void);
+    // True once the user asked to leave (Fn+Esc, or the power button).
+    bool tanmatsu_input_quit(void);
 
-// ---------------------------------------------------------------------------
-// Storage: mounts the internal FAT partition and, when present, the SD card.
-// ---------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
+    // Storage: mounts the internal FAT partition and, when present, the SD card.
+    // ---------------------------------------------------------------------------
 
-esp_err_t tanmatsu_storage_init(void);
+    esp_err_t tanmatsu_storage_init(void);
 
-// Directory TIC-80 keeps its carts and config in, with a trailing separator
-// left off. Lives on the SD card when one is mounted, on internal flash if not.
-const char* tanmatsu_storage_root(void);
+    // Directory TIC-80 keeps its carts and config in, with a trailing separator
+    // left off. Lives on the SD card when one is mounted, on internal flash if not.
+    const char* tanmatsu_storage_root(void);
 
 #ifdef __cplusplus
 }

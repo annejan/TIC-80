@@ -51,23 +51,27 @@ static i2s_chan_handle_t i2s_handle = NULL;
 #define AUDIO_QUEUE_FRAMES  6
 
 static StreamBufferHandle_t audio_stream = NULL;
-static TaskHandle_t         audio_task   = NULL;
+static TaskHandle_t audio_task = NULL;
 
-static void audio_task_entry(void* arg) {
+static void audio_task_entry(void* arg)
+{
     (void)arg;
 
     int16_t* chunk = heap_caps_calloc(1, AUDIO_FRAME_BYTES, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    if (chunk == NULL) {
+    if(chunk == NULL)
+    {
         ESP_LOGE(TAG, "No memory for the audio chunk buffer");
         audio_task = NULL;
         vTaskDelete(NULL);
         return;
     }
 
-    while (true) {
+    while(true)
+    {
         size_t got = xStreamBufferReceive(audio_stream, chunk, AUDIO_FRAME_BYTES, pdMS_TO_TICKS(100));
 
-        if (got < AUDIO_FRAME_BYTES) {
+        if(got < AUDIO_FRAME_BYTES)
+        {
             // Starved, because the cart is running slower than 60 fps. Pad with
             // silence so what did arrive still plays at the right pitch.
             memset((uint8_t*)chunk + got, 0, AUDIO_FRAME_BYTES - got);
@@ -78,9 +82,11 @@ static void audio_task_entry(void* arg) {
     }
 }
 
-esp_err_t tanmatsu_audio_init(void) {
+esp_err_t tanmatsu_audio_init(void)
+{
     esp_err_t res = bsp_audio_get_i2s_handle(&i2s_handle);
-    if (res != ESP_OK) {
+    if(res != ESP_OK)
+    {
         ESP_LOGE(TAG, "Failed to get the I2S handle: %s", esp_err_to_name(res));
         return res;
     }
@@ -89,36 +95,44 @@ esp_err_t tanmatsu_audio_init(void) {
     // wants, but say so anyway in case that default ever moves. The clock can
     // only be reconfigured while the channel is disabled, and the BSP leaves
     // it enabled.
-    if (i2s_channel_disable(i2s_handle) == ESP_OK) {
+    if(i2s_channel_disable(i2s_handle) == ESP_OK)
+    {
         res = bsp_audio_set_rate(TIC80_SAMPLERATE);
-        if (res != ESP_OK) {
+        if(res != ESP_OK)
+        {
             ESP_LOGW(TAG, "Failed to set the sample rate: %s", esp_err_to_name(res));
         }
 
         res = i2s_channel_enable(i2s_handle);
-        if (res != ESP_OK) {
+        if(res != ESP_OK)
+        {
             ESP_LOGE(TAG, "Failed to re-enable the I2S channel: %s", esp_err_to_name(res));
             return res;
         }
-    } else {
+    }
+    else
+    {
         ESP_LOGW(TAG, "Could not disable the I2S channel, keeping the rate the BSP set");
     }
 
     res = bsp_audio_set_amplifier(true);
-    if (res != ESP_OK) {
+    if(res != ESP_OK)
+    {
         ESP_LOGW(TAG, "Failed to enable the amplifier: %s", esp_err_to_name(res));
     }
 
     tanmatsu_audio_set_volume(80);
 
     audio_stream = xStreamBufferCreate(AUDIO_FRAME_BYTES * AUDIO_QUEUE_FRAMES, AUDIO_FRAME_BYTES);
-    if (audio_stream == NULL) {
+    if(audio_stream == NULL)
+    {
         ESP_LOGW(TAG, "No audio stream buffer, writing to the codec from the main loop");
         return ESP_OK;
     }
 
     // Core 1, which the rest of this port leaves idle.
-    if (xTaskCreatePinnedToCore(audio_task_entry, "tic80-audio", 4096, NULL, 10, &audio_task, 1) != pdPASS) {
+    if(xTaskCreatePinnedToCore(audio_task_entry, "tic80-audio", 4096, NULL, 10, &audio_task, 1) != pdPASS)
+    {
         ESP_LOGW(TAG, "No audio task, writing to the codec from the main loop");
         vStreamBufferDelete(audio_stream);
         audio_stream = NULL;
@@ -127,26 +141,33 @@ esp_err_t tanmatsu_audio_init(void) {
     return ESP_OK;
 }
 
-void tanmatsu_audio_set_volume(int32_t percent) {
-    if (percent < 0) {
+void tanmatsu_audio_set_volume(int32_t percent)
+{
+    if(percent < 0)
+    {
         percent = 0;
     }
-    if (percent > 100) {
+    if(percent > 100)
+    {
         percent = 100;
     }
 
     esp_err_t res = bsp_audio_set_volume((float)percent);
-    if (res != ESP_OK) {
+    if(res != ESP_OK)
+    {
         ESP_LOGW(TAG, "Failed to set the volume: %s", esp_err_to_name(res));
     }
 }
 
-void tanmatsu_audio_write(const int16_t* samples, size_t count) {
-    if (i2s_handle == NULL || samples == NULL || count == 0) {
+void tanmatsu_audio_write(const int16_t* samples, size_t count)
+{
+    if(i2s_handle == NULL || samples == NULL || count == 0)
+    {
         return;
     }
 
-    if (audio_stream != NULL) {
+    if(audio_stream != NULL)
+    {
         // Blocks once the buffer is full, which is what paces the main loop:
         // the codec consumes in real time, so the loop cannot run ahead.
         xStreamBufferSend(audio_stream, samples, count * sizeof(int16_t), pdMS_TO_TICKS(100));
@@ -157,7 +178,8 @@ void tanmatsu_audio_write(const int16_t* samples, size_t count) {
     // One frame's worth of audio is 1/60th of a second, so a full second of
     // timeout only ever trips when the codec has stopped.
     esp_err_t res = i2s_channel_write(i2s_handle, samples, count * sizeof(int16_t), &written, 1000);
-    if (res != ESP_OK) {
+    if(res != ESP_OK)
+    {
         ESP_LOGW(TAG, "I2S write failed: %s", esp_err_to_name(res));
     }
 }

@@ -62,72 +62,80 @@ static char const TAG[] = "tic80-usb";
 // is 256 pixels wide, so at 1:1 an inch of desk crosses it several times over.
 #define MOUSE_DIVISOR 2
 
-typedef enum {
+typedef enum
+{
     DEVICE_NONE = 0,
-    DEVICE_KEYBOARD,      // Boot protocol, which is all TIC-80 needs of one
-    DEVICE_MOUSE,         // Report protocol, read through the parsed layout
-    DEVICE_MOUSE_BOOT,    // A mouse whose descriptor said nothing usable
+    DEVICE_KEYBOARD,   // Boot protocol, which is all TIC-80 needs of one
+    DEVICE_MOUSE,      // Report protocol, read through the parsed layout
+    DEVICE_MOUSE_BOOT, // A mouse whose descriptor said nothing usable
     DEVICE_GAMEPAD,
 } device_kind_t;
 
-typedef struct {
-    bool                     in_use;
-    device_kind_t            kind;
-    uint8_t                  player;  // Gamepads: which of TIC-80's four it is
+typedef struct
+{
+    bool in_use;
+    device_kind_t kind;
+    uint8_t player; // Gamepads: which of TIC-80's four it is
     hid_host_device_handle_t handle;
-    hid_layout_t             layout;   // Mice
-    hid_gamepad_t            gamepad;  // Gamepads
+    hid_layout_t layout;   // Mice
+    hid_gamepad_t gamepad; // Gamepads
 } device_t;
 
-typedef enum {
+typedef enum
+{
     EVENT_KEYBOARD = 0,
     EVENT_GAMEPAD,
-    EVENT_DEVICES,  // A device came or went; carries what is plugged in now
+    EVENT_DEVICES, // A device came or went; carries what is plugged in now
 } event_type_t;
 
-typedef struct {
+typedef struct
+{
     event_type_t type;
-    uint8_t      slot;  // Which device it came from, for the per-device state
-    union {
-        struct {
+    uint8_t slot; // Which device it came from, for the per-device state
+    union
+    {
+        struct
+        {
             uint8_t modifier;
             uint8_t keys[HID_KEYBOARD_KEY_MAX];
         } keyboard;
-        struct {
+        struct
+        {
             uint8_t player;
-            uint8_t buttons;  // tic80_gamepad bits
+            uint8_t buttons; // tic80_gamepad bits
         } gamepad;
-        struct {
-            bool    keyboard;
-            bool    mouse;
-            bool    gamepad;
-            uint8_t live;           // Bit per device slot still plugged in
-            uint8_t keyboard_live;  // Of those, the ones that are keyboards
-            uint8_t gamepad_live;   // Bit per player still plugged in
+        struct
+        {
+            bool keyboard;
+            bool mouse;
+            bool gamepad;
+            uint8_t live;          // Bit per device slot still plugged in
+            uint8_t keyboard_live; // Of those, the ones that are keyboards
+            uint8_t gamepad_live;  // Bit per player still plugged in
         } devices;
     };
 } event_t;
 
 // Written by the HID driver task, read by the main loop through the queue.
-static device_t      devices[MAX_DEVICES];
-static QueueHandle_t event_queue  = NULL;
+static device_t devices[MAX_DEVICES];
+static QueueHandle_t event_queue = NULL;
 static QueueHandle_t driver_queue = NULL;
-static bool          started      = false;
+static bool started = false;
 
 // What init() got as far as putting up, so deinit() can take down exactly that
 // much: it also runs on the error paths, where only some of it exists.
-static bool                  host_installed = false;
-static bool                  hid_installed  = false;
-static volatile bool         stopping       = false;
-static TaskHandle_t volatile lib_task       = NULL;
-static TaskHandle_t volatile hid_task       = NULL;
+static bool host_installed = false;
+static bool hid_installed = false;
+static volatile bool stopping = false;
+static TaskHandle_t volatile lib_task = NULL;
+static TaskHandle_t volatile hid_task = NULL;
 
 // Main loop side: what the last reports added up to. The keyboard state is
 // kept per device rather than merged as it arrives: a keyboard that presents
 // two interfaces reports the same key on one and nothing on the other, and
 // shared state would see that as the key being pressed over and over.
-static bool    key_state[MAX_DEVICES][tic_keys_count];
-static uint8_t keyboard_slots = 0;  // Which of them hold a keyboard at all
+static bool key_state[MAX_DEVICES][tic_keys_count];
+static uint8_t keyboard_slots = 0; // Which of them hold a keyboard at all
 
 // One pad per player rather than one shared state: two pads reporting into the
 // same byte would each undo the other's buttons on their next report.
@@ -141,37 +149,43 @@ static uint8_t gamepad_state[TANMATSU_USB_HID_MAX_GAMEPADS];
 // Movement from every mouse adds into one pointer, which is what two mice on
 // one pointer should do. Buttons are per device and OR'd, so one mouse letting
 // go of its button does not let go of the other's.
-static portMUX_TYPE mouse_lock   = portMUX_INITIALIZER_UNLOCKED;
-static int32_t      mouse_dx     = 0;
-static int32_t      mouse_dy     = 0;
-static int32_t      mouse_scroll = 0;
-static uint8_t      mouse_buttons[MAX_DEVICES];
+static portMUX_TYPE mouse_lock = portMUX_INITIALIZER_UNLOCKED;
+static int32_t mouse_dx = 0;
+static int32_t mouse_dy = 0;
+static int32_t mouse_scroll = 0;
+static uint8_t mouse_buttons[MAX_DEVICES];
 
-static int32_t leftover_dx    = 0;  // The half pixels MOUSE_DIVISOR leaves behind
-static int32_t leftover_dy    = 0;
-static bool    have_keyboard  = false;
-static bool    have_mouse     = false;
-static bool    have_gamepad   = false;
+static int32_t leftover_dx = 0; // The half pixels MOUSE_DIVISOR leaves behind
+static int32_t leftover_dy = 0;
+static bool have_keyboard = false;
+static bool have_mouse = false;
+static bool have_gamepad = false;
 
 // ---------------------------------------------------------------------------
 // Keyboard
 // ---------------------------------------------------------------------------
 
-static tic_key usage_to_tic_key(uint8_t usage) {
-    if (usage >= HID_KEY_A && usage <= HID_KEY_Z) {
+static tic_key usage_to_tic_key(uint8_t usage)
+{
+    if(usage >= HID_KEY_A && usage <= HID_KEY_Z)
+    {
         return (tic_key)(tic_key_a + (usage - HID_KEY_A));
     }
-    if (usage >= HID_KEY_1 && usage <= HID_KEY_9) {
+    if(usage >= HID_KEY_1 && usage <= HID_KEY_9)
+    {
         return (tic_key)(tic_key_1 + (usage - HID_KEY_1));
     }
-    if (usage >= HID_KEY_F1 && usage <= HID_KEY_F12) {
+    if(usage >= HID_KEY_F1 && usage <= HID_KEY_F12)
+    {
         return (tic_key)(tic_key_f1 + (usage - HID_KEY_F1));
     }
-    if (usage >= HID_KEY_KEYPAD_1 && usage <= HID_KEY_KEYPAD_9) {
+    if(usage >= HID_KEY_KEYPAD_1 && usage <= HID_KEY_KEYPAD_9)
+    {
         return (tic_key)(tic_key_numpad1 + (usage - HID_KEY_KEYPAD_1));
     }
 
-    switch (usage) {
+    switch(usage)
+    {
         case HID_KEY_0: return tic_key_0;
         case HID_KEY_ENTER: return tic_key_return;
         case HID_KEY_ESC: return tic_key_escape;
@@ -218,55 +232,64 @@ static tic_key usage_to_tic_key(uint8_t usage) {
 // The characters themselves are left to the studio, which works them out from
 // the keys it is handed and repeats them at its own rate. Handing it text as
 // well would be a second source of the same keystroke.
-static void apply_keyboard(uint8_t slot, const uint8_t modifier, const uint8_t* keys) {
+static void apply_keyboard(uint8_t slot, const uint8_t modifier, const uint8_t* keys)
+{
     bool* state = key_state[slot];
 
     memset(state, 0, sizeof(key_state[slot]));
 
     state[tic_key_shift] = (modifier & (HID_LEFT_SHIFT | HID_RIGHT_SHIFT)) != 0;
-    state[tic_key_ctrl]  = (modifier & (HID_LEFT_CONTROL | HID_RIGHT_CONTROL)) != 0;
-    state[tic_key_alt]   = (modifier & (HID_LEFT_ALT | HID_RIGHT_ALT)) != 0;
+    state[tic_key_ctrl] = (modifier & (HID_LEFT_CONTROL | HID_RIGHT_CONTROL)) != 0;
+    state[tic_key_alt] = (modifier & (HID_LEFT_ALT | HID_RIGHT_ALT)) != 0;
 
-    for (size_t i = 0; i < HID_KEYBOARD_KEY_MAX; i++) {
+    for(size_t i = 0; i < HID_KEYBOARD_KEY_MAX; i++)
+    {
         uint8_t usage = keys[i];
-        if (usage <= HID_KEY_ERROR_UNDEFINED) {
+        if(usage <= HID_KEY_ERROR_UNDEFINED)
+        {
             continue;
         }
 
         tic_key key = usage_to_tic_key(usage);
-        if (key != tic_key_unknown) {
+        if(key != tic_key_unknown)
+        {
             state[key] = true;
         }
     }
-
 }
 
 // ---------------------------------------------------------------------------
 // Report decoding, on the HID driver's task
 // ---------------------------------------------------------------------------
 
-static void post(const event_t* event) {
-    if (event_queue != NULL) {
+static void post(const event_t* event)
+{
+    if(event_queue != NULL)
+    {
         xQueueSend(event_queue, event, 0);
     }
 }
 
-static void post_device_list(void) {
+static void post_device_list(void)
+{
     event_t event = {.type = EVENT_DEVICES};
-    for (size_t i = 0; i < MAX_DEVICES; i++) {
-        if (!devices[i].in_use) {
+    for(size_t i = 0; i < MAX_DEVICES; i++)
+    {
+        if(!devices[i].in_use)
+        {
             continue;
         }
         event.devices.live |= (uint8_t)(1u << i);
-        switch (devices[i].kind) {
+        switch(devices[i].kind)
+        {
             case DEVICE_KEYBOARD:
-                event.devices.keyboard       = true;
+                event.devices.keyboard = true;
                 event.devices.keyboard_live |= (uint8_t)(1u << i);
                 break;
             case DEVICE_MOUSE:
             case DEVICE_MOUSE_BOOT: event.devices.mouse = true; break;
             case DEVICE_GAMEPAD:
-                event.devices.gamepad       = true;
+                event.devices.gamepad = true;
                 event.devices.gamepad_live |= (uint8_t)(1u << devices[i].player);
                 break;
             default: break;
@@ -277,17 +300,20 @@ static void post_device_list(void) {
 
 // On the HID driver task. The buttons are a state, so the newest report wins;
 // the movement is a change, so every report counts and none may be dropped.
-static void accumulate_mouse(uint8_t slot, int32_t dx, int32_t dy, int32_t wheel, uint8_t buttons) {
+static void accumulate_mouse(uint8_t slot, int32_t dx, int32_t dy, int32_t wheel, uint8_t buttons)
+{
     portENTER_CRITICAL(&mouse_lock);
-    mouse_dx             += dx;
-    mouse_dy             += dy;
-    mouse_scroll         += wheel;
-    mouse_buttons[slot]   = buttons;
+    mouse_dx += dx;
+    mouse_dy += dy;
+    mouse_scroll += wheel;
+    mouse_buttons[slot] = buttons;
     portEXIT_CRITICAL(&mouse_lock);
 }
 
-static void decode_keyboard(uint8_t slot, const uint8_t* data, size_t length) {
-    if (length < sizeof(hid_keyboard_input_report_boot_t)) {
+static void decode_keyboard(uint8_t slot, const uint8_t* data, size_t length)
+{
+    if(length < sizeof(hid_keyboard_input_report_boot_t))
+    {
         return;
     }
 
@@ -299,8 +325,10 @@ static void decode_keyboard(uint8_t slot, const uint8_t* data, size_t length) {
     post(&event);
 }
 
-static void decode_mouse_boot(uint8_t slot, const uint8_t* data, size_t length) {
-    if (length < sizeof(hid_mouse_input_report_boot_t)) {
+static void decode_mouse_boot(uint8_t slot, const uint8_t* data, size_t length)
+{
+    if(length < sizeof(hid_mouse_input_report_boot_t))
+    {
         return;
     }
 
@@ -309,20 +337,24 @@ static void decode_mouse_boot(uint8_t slot, const uint8_t* data, size_t length) 
     accumulate_mouse(slot, report->x_displacement, report->y_displacement, 0, report->buttons.val & 0x07);
 }
 
-static void decode_mouse(uint8_t slot, const device_t* device, const uint8_t* data, int length) {
+static void decode_mouse(uint8_t slot, const device_t* device, const uint8_t* data, int length)
+{
     const uint8_t* body = data;
-    int            left = length;
-    if (!hid_layout_strip_report_id(&device->layout, &body, &left)) {
-        return;  // A report for some other part of the device, a battery level say
+    int left = length;
+    if(!hid_layout_strip_report_id(&device->layout, &body, &left))
+    {
+        return; // A report for some other part of the device, a battery level say
     }
 
-    int32_t dx    = hid_layout_read(body, left, &device->layout.x);
-    int32_t dy    = hid_layout_read(body, left, &device->layout.y);
+    int32_t dx = hid_layout_read(body, left, &device->layout.x);
+    int32_t dy = hid_layout_read(body, left, &device->layout.y);
     int32_t wheel = hid_layout_read(body, left, &device->layout.wheel);
 
     uint8_t buttons = 0;
-    for (uint16_t button = 0; button < device->layout.button_count && button < 3; button++) {
-        if (hid_layout_read_button(body, left, &device->layout, button)) {
+    for(uint16_t button = 0; button < device->layout.button_count && button < 3; button++)
+    {
+        if(hid_layout_read_button(body, left, &device->layout, button))
+        {
             buttons |= (uint8_t)(1u << button);
         }
     }
@@ -330,9 +362,11 @@ static void decode_mouse(uint8_t slot, const device_t* device, const uint8_t* da
     accumulate_mouse(slot, dx, dy, wheel, buttons);
 }
 
-static void decode_gamepad(const device_t* device, const uint8_t* data, int length) {
+static void decode_gamepad(const device_t* device, const uint8_t* data, int length)
+{
     hid_gamepad_state_t state;
-    if (!hid_gamepad_decode(&device->gamepad, data, length, &state)) {
+    if(!hid_gamepad_decode(&device->gamepad, data, length, &state))
+    {
         return;
     }
 
@@ -340,28 +374,34 @@ static void decode_gamepad(const device_t* device, const uint8_t* data, int leng
     // first four the descriptor numbers are the closest thing to a convention
     // there is; a pad that disagrees still steers, it just labels oddly.
     uint8_t buttons = 0;
-    if (state.up) {
+    if(state.up)
+    {
         buttons |= 1u << 0;
     }
-    if (state.down) {
+    if(state.down)
+    {
         buttons |= 1u << 1;
     }
-    if (state.left) {
+    if(state.left)
+    {
         buttons |= 1u << 2;
     }
-    if (state.right) {
+    if(state.right)
+    {
         buttons |= 1u << 3;
     }
 
     uint32_t named = state.usage_buttons != 0 ? state.usage_buttons : state.buttons;
-    for (uint8_t i = 0; i < 4; i++) {
-        if (named & (1u << i)) {
+    for(uint8_t i = 0; i < 4; i++)
+    {
+        if(named & (1u << i))
+        {
             buttons |= (uint8_t)(1u << (4 + i));
         }
     }
 
     event_t event = {.type = EVENT_GAMEPAD};
-    event.gamepad.player  = device->player;
+    event.gamepad.player = device->player;
     event.gamepad.buttons = buttons;
     post(&event);
 }
@@ -370,20 +410,25 @@ static void decode_gamepad(const device_t* device, const uint8_t* data, int leng
 // USB host plumbing
 // ---------------------------------------------------------------------------
 
-static void interface_callback(hid_host_device_handle_t handle, const hid_host_interface_event_t event, void* arg) {
+static void interface_callback(hid_host_device_handle_t handle, const hid_host_interface_event_t event, void* arg)
+{
     device_t* device = (device_t*)arg;
 
-    switch (event) {
-        case HID_HOST_INTERFACE_EVENT_INPUT_REPORT: {
+    switch(event)
+    {
+        case HID_HOST_INTERFACE_EVENT_INPUT_REPORT:
+        {
             uint8_t data[64];
-            size_t  length = 0;
-            if (hid_host_device_get_raw_input_report_data(handle, data, sizeof(data), &length) != ESP_OK) {
+            size_t length = 0;
+            if(hid_host_device_get_raw_input_report_data(handle, data, sizeof(data), &length) != ESP_OK)
+            {
                 return;
             }
 
             uint8_t slot = (uint8_t)(device - devices);
 
-            switch (device->kind) {
+            switch(device->kind)
+            {
                 case DEVICE_KEYBOARD: decode_keyboard(slot, data, length); break;
                 case DEVICE_MOUSE: decode_mouse(slot, device, data, (int)length); break;
                 case DEVICE_MOUSE_BOOT: decode_mouse_boot(slot, data, length); break;
@@ -397,7 +442,7 @@ static void interface_callback(hid_host_device_handle_t handle, const hid_host_i
             ESP_LOGI(TAG, "Device disconnected");
             hid_host_device_close(handle);
             device->in_use = false;
-            device->kind   = DEVICE_NONE;
+            device->kind = DEVICE_NONE;
             post_device_list();
             break;
 
@@ -410,9 +455,12 @@ static void interface_callback(hid_host_device_handle_t handle, const hid_host_i
     }
 }
 
-static device_t* take_slot(void) {
-    for (size_t i = 0; i < MAX_DEVICES; i++) {
-        if (!devices[i].in_use) {
+static device_t* take_slot(void)
+{
+    for(size_t i = 0; i < MAX_DEVICES; i++)
+    {
+        if(!devices[i].in_use)
+        {
             memset(&devices[i], 0, sizeof(devices[i]));
             devices[i].in_use = true;
             return &devices[i];
@@ -423,35 +471,43 @@ static device_t* take_slot(void) {
 
 // A pad keeps its player for as long as it stays plugged in, so unplugging
 // player one leaves player two where it was rather than promoting it.
-static uint8_t take_player(const device_t* self) {
-    for (uint8_t player = 0; player < TANMATSU_USB_HID_MAX_GAMEPADS; player++) {
+static uint8_t take_player(const device_t* self)
+{
+    for(uint8_t player = 0; player < TANMATSU_USB_HID_MAX_GAMEPADS; player++)
+    {
         bool taken = false;
-        for (size_t i = 0; i < MAX_DEVICES; i++) {
-            if (&devices[i] != self && devices[i].in_use && devices[i].kind == DEVICE_GAMEPAD &&
-                devices[i].player == player) {
+        for(size_t i = 0; i < MAX_DEVICES; i++)
+        {
+            if(&devices[i] != self && devices[i].in_use && devices[i].kind == DEVICE_GAMEPAD &&
+               devices[i].player == player)
+            {
                 taken = true;
                 break;
             }
         }
-        if (!taken) {
+        if(!taken)
+        {
             return player;
         }
     }
-    return 0;  // Cannot happen while there are no more slots than players
+    return 0; // Cannot happen while there are no more slots than players
 }
 
 // Some gamepads enumerate, hand out a report descriptor and then say nothing
 // at all until they are asked to start reporting. The hid-host component knows
 // which ones and what to send; sending it is up to whoever holds the handle.
-static void nudge_gamepad(hid_host_device_handle_t handle, const hid_gamepad_t* gamepad) {
+static void nudge_gamepad(hid_host_device_handle_t handle, const hid_gamepad_t* gamepad)
+{
     const hid_gamepad_quirk_t* quirk = gamepad->quirk;
-    if (quirk == NULL || quirk->enable_report == NULL) {
+    if(quirk == NULL || quirk->enable_report == NULL)
+    {
         return;
     }
 
     uint8_t report[8] = {0};
-    size_t  length    = quirk->enable_report_length;
-    if (length > sizeof(report)) {
+    size_t length = quirk->enable_report_length;
+    if(length > sizeof(report))
+    {
         length = sizeof(report);
     }
     memcpy(report, quirk->enable_report, length);
@@ -460,35 +516,43 @@ static void nudge_gamepad(hid_host_device_handle_t handle, const hid_gamepad_t* 
     hid_class_request_set_report(handle, HID_REPORT_TYPE_FEATURE, quirk->enable_report_id, report, length);
 }
 
-static void device_connected(hid_host_device_handle_t handle) {
+static void device_connected(hid_host_device_handle_t handle)
+{
     hid_host_dev_params_t params;
-    if (hid_host_device_get_params(handle, &params) != ESP_OK) {
+    if(hid_host_device_get_params(handle, &params) != ESP_OK)
+    {
         return;
     }
 
     device_t* device = take_slot();
-    if (device == NULL) {
+    if(device == NULL)
+    {
         ESP_LOGW(TAG, "No room for another device");
         return;
     }
     device->handle = handle;
 
     const hid_host_device_config_t config = {.callback = interface_callback, .callback_arg = device};
-    if (hid_host_device_open(handle, &config) != ESP_OK) {
+    if(hid_host_device_open(handle, &config) != ESP_OK)
+    {
         device->in_use = false;
         return;
     }
 
     bool boot = params.sub_class == HID_SUBCLASS_BOOT_INTERFACE;
 
-    if (boot && params.proto == HID_PROTOCOL_KEYBOARD) {
+    if(boot && params.proto == HID_PROTOCOL_KEYBOARD)
+    {
         // The boot report is a fixed eight bytes and says everything TIC-80
         // asks of a keyboard, so there is nothing to gain from parsing one.
         hid_class_request_set_protocol(handle, HID_REPORT_PROTOCOL_BOOT);
         hid_class_request_set_idle(handle, 0, 0);
         device->kind = DEVICE_KEYBOARD;
-    } else {
-        if (boot) {
+    }
+    else
+    {
+        if(boot)
+        {
             // Ask a boot mouse for its full reports: that is where the wheel
             // and the fourth and fifth buttons live.
             hid_class_request_set_protocol(handle, HID_REPORT_PROTOCOL_REPORT);
@@ -496,29 +560,37 @@ static void device_connected(hid_host_device_handle_t handle) {
 
         uint16_t vid = 0, pid = 0;
         hid_host_dev_info_t info;
-        if (hid_host_get_device_info(handle, &info) == ESP_OK) {
+        if(hid_host_get_device_info(handle, &info) == ESP_OK)
+        {
             vid = info.VID;
             pid = info.PID;
         }
 
-        size_t         length     = 0;
+        size_t length = 0;
         const uint8_t* descriptor = hid_host_get_report_descriptor(handle, &length);
 
-        if (descriptor != NULL && hid_gamepad_open(&device->gamepad, descriptor, length, vid, pid)) {
-            device->kind   = DEVICE_GAMEPAD;
+        if(descriptor != NULL && hid_gamepad_open(&device->gamepad, descriptor, length, vid, pid))
+        {
+            device->kind = DEVICE_GAMEPAD;
             device->player = take_player(device);
             nudge_gamepad(handle, &device->gamepad);
-        } else if (descriptor != NULL && hid_layout_parse(descriptor, length, &device->layout) &&
-                   ((device->layout.x.present && device->layout.x.relative) ||
-                    (device->layout.y.present && device->layout.y.relative))) {
+        }
+        else if(descriptor != NULL && hid_layout_parse(descriptor, length, &device->layout) &&
+                ((device->layout.x.present && device->layout.x.relative) ||
+                 (device->layout.y.present && device->layout.y.relative)))
+        {
             // What separates a mouse from the rest is that it reports a change
             // rather than a position. Without that test the second interface
             // of a keyboard, whose keys parse as a pile of buttons, would be
             // taken for a mouse and click on every keystroke.
             device->kind = DEVICE_MOUSE;
-        } else if (params.proto == HID_PROTOCOL_MOUSE) {
+        }
+        else if(params.proto == HID_PROTOCOL_MOUSE)
+        {
             device->kind = DEVICE_MOUSE_BOOT;
-        } else {
+        }
+        else
+        {
             ESP_LOGI(TAG, "Nothing usable in the report descriptor, ignoring the device");
             hid_host_device_close(handle);
             device->in_use = false;
@@ -526,7 +598,8 @@ static void device_connected(hid_host_device_handle_t handle) {
         }
     }
 
-    if (device->kind == DEVICE_MOUSE || device->kind == DEVICE_MOUSE_BOOT) {
+    if(device->kind == DEVICE_MOUSE || device->kind == DEVICE_MOUSE_BOOT)
+    {
         // Report on change rather than on a timer. The accumulator does not
         // mind the repeats, but there is no reason to wake for them either.
         hid_class_request_set_idle(handle, 0, 0);
@@ -541,18 +614,23 @@ static void device_connected(hid_host_device_handle_t handle) {
 
 // The driver calls this from its own task, where opening a device would
 // deadlock, so it only hands the event on.
-static void driver_callback(hid_host_device_handle_t handle, const hid_host_driver_event_t event, void* arg) {
-    if (event != HID_HOST_DRIVER_EVENT_CONNECTED || driver_queue == NULL) {
+static void driver_callback(hid_host_device_handle_t handle, const hid_host_driver_event_t event, void* arg)
+{
+    if(event != HID_HOST_DRIVER_EVENT_CONNECTED || driver_queue == NULL)
+    {
         return;
     }
     xQueueSend(driver_queue, &handle, 0);
 }
 
-static void driver_task(void* arg) {
+static void driver_task(void* arg)
+{
     hid_host_device_handle_t handle;
-    while (xQueueReceive(driver_queue, &handle, portMAX_DELAY) == pdTRUE) {
-        if (handle == NULL) {
-            break;  // The stop token deinit() sends
+    while(xQueueReceive(driver_queue, &handle, portMAX_DELAY) == pdTRUE)
+    {
+        if(handle == NULL)
+        {
+            break; // The stop token deinit() sends
         }
         device_connected(handle);
     }
@@ -560,13 +638,15 @@ static void driver_task(void* arg) {
     vTaskDelete(NULL);
 }
 
-static void usb_lib_task(void* arg) {
+static void usb_lib_task(void* arg)
+{
     const usb_host_config_t config = {
         .skip_phy_setup = false,
-        .intr_flags     = ESP_INTR_FLAG_LEVEL1,
+        .intr_flags = ESP_INTR_FLAG_LEVEL1,
     };
 
-    if (usb_host_install(&config) != ESP_OK) {
+    if(usb_host_install(&config) != ESP_OK)
+    {
         ESP_LOGE(TAG, "Failed to install the USB host library");
         lib_task = NULL;
         xTaskNotifyGive((TaskHandle_t)arg);
@@ -574,15 +654,17 @@ static void usb_lib_task(void* arg) {
         return;
     }
 
-    started        = true;
+    started = true;
     host_installed = true;
     xTaskNotifyGive((TaskHandle_t)arg);
 
     // usb_host_lib_unblock() is what returns this from its wait on the way out.
-    while (!stopping) {
+    while(!stopping)
+    {
         uint32_t flags;
         usb_host_lib_handle_events(portMAX_DELAY, &flags);
-        if (flags & USB_HOST_LIB_EVENT_FLAGS_NO_CLIENTS) {
+        if(flags & USB_HOST_LIB_EVENT_FLAGS_NO_CLIENTS)
+        {
             usb_host_device_free_all();
         }
     }
@@ -591,25 +673,28 @@ static void usb_lib_task(void* arg) {
     vTaskDelete(NULL);
 }
 
-esp_err_t tanmatsu_usb_hid_init(void) {
+esp_err_t tanmatsu_usb_hid_init(void)
+{
     memset(devices, 0, sizeof(devices));
     memset(key_state, 0, sizeof(key_state));
     memset(gamepad_state, 0, sizeof(gamepad_state));
     memset(mouse_buttons, 0, sizeof(mouse_buttons));
     keyboard_slots = 0;
-    stopping       = false;
+    stopping = false;
 
     // Nothing enumerates without power on the port, and the port has none
     // until the coprocessor turns the boost converter on.
     esp_err_t res = bsp_power_set_usb_host_boost_enabled(true);
-    if (res != ESP_OK) {
+    if(res != ESP_OK)
+    {
         ESP_LOGW(TAG, "Failed to power the USB port: %s", esp_err_to_name(res));
         return res;
     }
 
-    event_queue  = xQueueCreate(EVENT_QUEUE_LENGTH, sizeof(event_t));
+    event_queue = xQueueCreate(EVENT_QUEUE_LENGTH, sizeof(event_t));
     driver_queue = xQueueCreate(MAX_DEVICES, sizeof(hid_host_device_handle_t));
-    if (event_queue == NULL || driver_queue == NULL) {
+    if(event_queue == NULL || driver_queue == NULL)
+    {
         ESP_LOGE(TAG, "Out of memory");
         tanmatsu_usb_hid_deinit();
         return ESP_ERR_NO_MEM;
@@ -618,30 +703,33 @@ esp_err_t tanmatsu_usb_hid_init(void) {
     // Core 0: core 1 runs the audio task, and the main loop wants what is left
     // of it. USB is not busy enough to mind sharing with the rest.
     TaskHandle_t task = NULL;
-    if (xTaskCreatePinnedToCore(usb_lib_task, "tic80-usb-lib", 4096, xTaskGetCurrentTaskHandle(), 2, &task, 0) !=
-        pdPASS) {
+    if(xTaskCreatePinnedToCore(usb_lib_task, "tic80-usb-lib", 4096, xTaskGetCurrentTaskHandle(), 2, &task, 0) !=
+       pdPASS)
+    {
         tanmatsu_usb_hid_deinit();
         return ESP_ERR_NO_MEM;
     }
     lib_task = task;
     ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
 
-    if (!started) {
+    if(!started)
+    {
         tanmatsu_usb_hid_deinit();
         return ESP_FAIL;
     }
 
     const hid_host_driver_config_t driver_config = {
         .create_background_task = true,
-        .task_priority          = 5,
-        .stack_size             = 4096,
-        .core_id                = 0,
-        .callback               = driver_callback,
-        .callback_arg           = NULL,
+        .task_priority = 5,
+        .stack_size = 4096,
+        .core_id = 0,
+        .callback = driver_callback,
+        .callback_arg = NULL,
     };
 
     res = hid_host_install(&driver_config);
-    if (res != ESP_OK) {
+    if(res != ESP_OK)
+    {
         ESP_LOGE(TAG, "Failed to install the HID driver: %s", esp_err_to_name(res));
         tanmatsu_usb_hid_deinit();
         return res;
@@ -649,7 +737,8 @@ esp_err_t tanmatsu_usb_hid_init(void) {
     hid_installed = true;
 
     task = NULL;
-    if (xTaskCreatePinnedToCore(driver_task, "tic80-usb-hid", 4096, NULL, 4, &task, 0) != pdPASS) {
+    if(xTaskCreatePinnedToCore(driver_task, "tic80-usb-hid", 4096, NULL, 4, &task, 0) != pdPASS)
+    {
         tanmatsu_usb_hid_deinit();
         return ESP_ERR_NO_MEM;
     }
@@ -662,25 +751,30 @@ esp_err_t tanmatsu_usb_hid_init(void) {
 // Neither task is deleted from the outside: one is inside the USB host library
 // and the other may be halfway through opening a device. They are asked to
 // leave and clear their own handle, and this waits for that.
-static void join(TaskHandle_t volatile* task) {
-    for (int i = 0; i < 100 && *task != NULL; i++) {
+static void join(TaskHandle_t volatile* task)
+{
+    for(int i = 0; i < 100 && *task != NULL; i++)
+    {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
-    if (*task != NULL) {
+    if(*task != NULL)
+    {
         ESP_LOGW(TAG, "A USB task did not stop, leaving it be");
         *task = NULL;
     }
 }
 
-void tanmatsu_usb_hid_deinit(void) {
+void tanmatsu_usb_hid_deinit(void)
+{
     stopping = true;
 
     // The main loop's queue goes first, so poll() cannot read one that is
     // being freed further down.
     QueueHandle_t events = event_queue;
-    event_queue          = NULL;
+    event_queue = NULL;
 
-    if (hid_task != NULL && driver_queue != NULL) {
+    if(hid_task != NULL && driver_queue != NULL)
+    {
         hid_host_device_handle_t stop = NULL;
         xQueueSend(driver_queue, &stop, 0);
         join(&hid_task);
@@ -688,28 +782,33 @@ void tanmatsu_usb_hid_deinit(void) {
 
     // In this order: the driver holds a client of the host library, and the
     // library will not uninstall while a client is registered.
-    if (hid_installed) {
+    if(hid_installed)
+    {
         hid_host_uninstall();
         hid_installed = false;
     }
 
-    if (lib_task != NULL) {
+    if(lib_task != NULL)
+    {
         usb_host_lib_unblock();
         join(&lib_task);
     }
 
-    if (host_installed) {
+    if(host_installed)
+    {
         usb_host_uninstall();
         host_installed = false;
     }
 
     started = false;
 
-    if (driver_queue != NULL) {
+    if(driver_queue != NULL)
+    {
         vQueueDelete(driver_queue);
         driver_queue = NULL;
     }
-    if (events != NULL) {
+    if(events != NULL)
+    {
         vQueueDelete(events);
     }
 
@@ -727,44 +826,54 @@ void tanmatsu_usb_hid_deinit(void) {
 // Main loop side
 // ---------------------------------------------------------------------------
 
-void tanmatsu_usb_hid_poll(tanmatsu_usb_hid_state_t* out) {
-    if (out == NULL) {
+void tanmatsu_usb_hid_poll(tanmatsu_usb_hid_state_t* out)
+{
+    if(out == NULL)
+    {
         return;
     }
 
     event_t event;
-    while (event_queue != NULL && xQueueReceive(event_queue, &event, 0) == pdTRUE) {
-        switch (event.type) {
+    while(event_queue != NULL && xQueueReceive(event_queue, &event, 0) == pdTRUE)
+    {
+        switch(event.type)
+        {
             case EVENT_KEYBOARD:
-                if (event.slot < MAX_DEVICES) {
+                if(event.slot < MAX_DEVICES)
+                {
                     apply_keyboard(event.slot, event.keyboard.modifier, event.keyboard.keys);
                 }
                 break;
 
             case EVENT_GAMEPAD:
-                if (event.gamepad.player < TANMATSU_USB_HID_MAX_GAMEPADS) {
+                if(event.gamepad.player < TANMATSU_USB_HID_MAX_GAMEPADS)
+                {
                     gamepad_state[event.gamepad.player] = event.gamepad.buttons;
                 }
                 break;
 
             case EVENT_DEVICES:
-                have_keyboard  = event.devices.keyboard;
-                have_mouse     = event.devices.mouse;
-                have_gamepad   = event.devices.gamepad;
+                have_keyboard = event.devices.keyboard;
+                have_mouse = event.devices.mouse;
+                have_gamepad = event.devices.gamepad;
                 keyboard_slots = event.devices.keyboard_live;
 
                 // Whatever a device was holding down when it was pulled out is
                 // not held down any more.
-                for (size_t i = 0; i < MAX_DEVICES; i++) {
-                    if ((event.devices.live & (1u << i)) == 0) {
+                for(size_t i = 0; i < MAX_DEVICES; i++)
+                {
+                    if((event.devices.live & (1u << i)) == 0)
+                    {
                         memset(key_state[i], 0, sizeof(key_state[i]));
                         portENTER_CRITICAL(&mouse_lock);
                         mouse_buttons[i] = 0;
                         portEXIT_CRITICAL(&mouse_lock);
                     }
                 }
-                for (size_t i = 0; i < TANMATSU_USB_HID_MAX_GAMEPADS; i++) {
-                    if ((event.devices.gamepad_live & (1u << i)) == 0) {
+                for(size_t i = 0; i < TANMATSU_USB_HID_MAX_GAMEPADS; i++)
+                {
+                    if((event.devices.gamepad_live & (1u << i)) == 0)
+                    {
                         gamepad_state[i] = 0;
                     }
                 }
@@ -773,31 +882,36 @@ void tanmatsu_usb_hid_poll(tanmatsu_usb_hid_state_t* out) {
     }
 
     memset(out->keys, 0, sizeof(out->keys));
-    for (size_t i = 0; i < MAX_DEVICES; i++) {
-        if ((keyboard_slots & (1u << i)) == 0) {
-            continue;  // Only a keyboard ever sets any of these
+    for(size_t i = 0; i < MAX_DEVICES; i++)
+    {
+        if((keyboard_slots & (1u << i)) == 0)
+        {
+            continue; // Only a keyboard ever sets any of these
         }
-        for (tic_key key = tic_key_unknown + 1; key < tic_keys_count; key++) {
-            if (key_state[i][key]) {
+        for(tic_key key = tic_key_unknown + 1; key < tic_keys_count; key++)
+        {
+            if(key_state[i][key])
+            {
                 out->keys[key] = true;
             }
         }
     }
 
     out->keyboard = have_keyboard;
-    out->mouse    = have_mouse;
-    out->gamepad  = have_gamepad;
+    out->mouse = have_mouse;
+    out->gamepad = have_gamepad;
 
     portENTER_CRITICAL(&mouse_lock);
-    int32_t dx      = mouse_dx;
-    int32_t dy      = mouse_dy;
-    int32_t scroll  = mouse_scroll;
+    int32_t dx = mouse_dx;
+    int32_t dy = mouse_dy;
+    int32_t scroll = mouse_scroll;
     uint8_t buttons = 0;
-    for (size_t i = 0; i < MAX_DEVICES; i++) {
+    for(size_t i = 0; i < MAX_DEVICES; i++)
+    {
         buttons |= mouse_buttons[i];
     }
-    mouse_dx     = 0;
-    mouse_dy     = 0;
+    mouse_dx = 0;
+    mouse_dy = 0;
     mouse_scroll = 0;
     portEXIT_CRITICAL(&mouse_lock);
 
@@ -807,13 +921,13 @@ void tanmatsu_usb_hid_poll(tanmatsu_usb_hid_state_t* out) {
     dy += leftover_dy;
     out->mouse_dx = dx / MOUSE_DIVISOR;
     out->mouse_dy = dy / MOUSE_DIVISOR;
-    leftover_dx   = dx - out->mouse_dx * MOUSE_DIVISOR;
-    leftover_dy   = dy - out->mouse_dy * MOUSE_DIVISOR;
+    leftover_dx = dx - out->mouse_dx * MOUSE_DIVISOR;
+    leftover_dy = dy - out->mouse_dy * MOUSE_DIVISOR;
 
     out->mouse_scroll = scroll;
 
-    out->mouse_left   = (buttons & (1u << 0)) != 0;
-    out->mouse_right  = (buttons & (1u << 1)) != 0;
+    out->mouse_left = (buttons & (1u << 0)) != 0;
+    out->mouse_right = (buttons & (1u << 1)) != 0;
     out->mouse_middle = (buttons & (1u << 2)) != 0;
 
     memcpy(out->gamepad_buttons, gamepad_state, sizeof(out->gamepad_buttons));
