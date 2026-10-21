@@ -1032,15 +1032,17 @@ jobs:
           # the change (17.09). Such a run builds the release variant unsigned
           # instead: the android job still proves the code compiles, the APK
           # cannot be mistaken for a shipable one, and every other event — a
-          # push, the tag call — signs exactly as before.
+          # push, the tag call — signs exactly as before. A fork of the
+          # repository has no secrets either, so it builds unsigned too.
           # Each build is copied aside before the next one: the two APKs come
           # out of the same output path, and the second overwrites the first.
-          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.pull_request.head.repo.fork }}" = "true" ]; then
+          if { [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.pull_request.head.repo.fork }}" = "true" ]; } \
+              || [ "${{ github.repository }}" != "nesbox/TIC-80" ]; then
               ./gradlew assembleRelease -PUNSIGNED=1
               cp app/build/outputs/apk/release/app-release-unsigned.apk tic80.apk
               ./gradlew assembleRelease -PUNSIGNED=1 -PEDITORS=OFF
               cp app/build/outputs/apk/release/app-release-unsigned.apk tic80-surf.apk
-              echo "fork pull request: no repository secrets, the APKs are unsigned"
+              echo "fork or fork pull request: no repository secrets, the APKs are unsigned"
           else
               : "${RELEASE_STORE_PASSWORD:?RELEASE_STORE_PASSWORD secret is not set}"
               : "${RELEASE_KEY_PASSWORD:?RELEASE_KEY_PASSWORD secret is not set}"
