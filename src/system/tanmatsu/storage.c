@@ -20,25 +20,14 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// The SD card power-up sequence follows the one in the Tanmatsu launcher
-// (Nicolai Electronics, MIT licensed): the card has to be power cycled through
-// the on-chip LDO or it comes up still in SDMMC mode from the previous boot.
-
 #include "tanmatsu.h"
 
 #include <stdio.h>
 #include <sys/stat.h>
 
-#include "driver/gpio.h"
-#include "driver/sdmmc_host.h"
-#include "esp_idf_version.h"
-#include "esp_heap_caps.h"
+#include "bsp/storage.h"
 #include "esp_log.h"
 #include "esp_vfs_fat.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "sd_pwr_ctrl_by_on_chip_ldo.h"
-#include "sdmmc_cmd.h"
 
 static char const TAG[] = "tic80-storage";
 
@@ -48,10 +37,10 @@ static char const TAG[] = "tic80-storage";
 #define TIC80_DIRECTORY      "tic80"
 
 static wl_handle_t wl_handle = WL_INVALID_HANDLE;
-static sdmmc_card_t* card = NULL;
-static sd_pwr_ctrl_handle_t sd_pwr_handle = NULL;
 static char root[64] = INTERNAL_MOUNT_POINT "/" TIC80_DIRECTORY;
 
+// The BSP mounts the SD card but not the internal FAT partition, which the
+// launcher mounts itself as well.
 static esp_err_t mount_internal(void)
 {
     esp_vfs_fat_mount_config_t config = {
@@ -65,123 +54,19 @@ static esp_err_t mount_internal(void)
     return esp_vfs_fat_spiflash_mount_rw_wl(INTERNAL_MOUNT_POINT, INTERNAL_PARTITION, &config, &wl_handle);
 }
 
-#if defined(CONFIG_BSP_TARGET_TANMATSU)
-
-// The ESP32-C6 radio is reached over SDIO on the same SDMMC controller as the
-// SD card slot. With ESP-Hosted in the build it initialises that controller
-// itself, and letting the card driver do it again leaves the card unmountable:
-// the launcher shows the card, TIC-80 does not. Same workaround as the
-// launcher's sdcard.c.
-#if defined(CONFIG_ESP_HOSTED_SDIO_HOST_INTERFACE) && (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0))
-#define SDCARD_HOSTED_OWNS_THE_HOST 1
-#else
-#define SDCARD_HOSTED_OWNS_THE_HOST 0
-#endif
-
-#if SDCARD_HOSTED_OWNS_THE_HOST
-static esp_err_t sdmmc_host_init_noop(void)
-{
-    return ESP_OK;
-}
-
-static esp_err_t sdmmc_host_deinit_noop(void)
-{
-    return ESP_OK;
-}
-#endif
-
-static esp_err_t power_cycle_sd_card(void)
-{
-    gpio_config_t gpio_cfg = {
-        .pin_bit_mask = BIT64(GPIO_NUM_39) | BIT64(GPIO_NUM_40) | BIT64(GPIO_NUM_41) | BIT64(GPIO_NUM_42) |
-                        BIT64(GPIO_NUM_43) | BIT64(GPIO_NUM_44),
-        .mode = GPIO_MODE_OUTPUT_OD,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    gpio_config(&gpio_cfg);
-
-    static const gpio_num_t bus_pins[] = {GPIO_NUM_39, GPIO_NUM_40, GPIO_NUM_41,
-                                          GPIO_NUM_42, GPIO_NUM_43, GPIO_NUM_44};
-    for(size_t i = 0; i < sizeof(bus_pins) / sizeof(bus_pins[0]); i++)
-    {
-        gpio_set_level(bus_pins[i], 0);
-    }
-
-    sd_pwr_ctrl_set_io_voltage(sd_pwr_handle, 0);
-    vTaskDelay(pdMS_TO_TICKS(150));
-
-    gpio_cfg.mode = GPIO_MODE_INPUT;
-    gpio_config(&gpio_cfg);
-    sd_pwr_ctrl_set_io_voltage(sd_pwr_handle, 3300);
-    vTaskDelay(pdMS_TO_TICKS(150));
-
-    return ESP_OK;
-}
-
+// The BSP powers the card up through the on-chip LDO and power cycles it, and
+// it knows that the card shares its SDMMC controller with the ESP32-C6 radio:
+// with ESP-Hosted in the build the radio owns the controller, and the card
+// must not initialise it a second time.
 static esp_err_t mount_sd_card(void)
 {
-    sd_pwr_ctrl_ldo_config_t ldo_config = {
-        .ldo_chan_id = 4,
-    };
-
-    esp_err_t res = sd_pwr_ctrl_new_on_chip_ldo(&ldo_config, &sd_pwr_handle);
-    if(res != ESP_OK)
+    if(bsp_storage_get_status(BSP_STORAGE_TYPE_SDCARD) == BSP_STORAGE_STATUS_NOT_PRESENT)
     {
-        ESP_LOGW(TAG, "No on-chip LDO for the SD card: %s", esp_err_to_name(res));
-        return res;
+        return ESP_ERR_NOT_FOUND;
     }
 
-    power_cycle_sd_card();
-
-    sdmmc_host_t host = SDMMC_HOST_DEFAULT();
-    host.slot = SDMMC_HOST_SLOT_0;
-    host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
-    host.pwr_ctrl_handle = sd_pwr_handle;
-
-#if SDCARD_HOSTED_OWNS_THE_HOST
-    host.init = &sdmmc_host_init_noop;
-    host.deinit = &sdmmc_host_deinit_noop;
-#endif
-
-    static uint8_t* dma_buf = NULL;
-    if(dma_buf == NULL)
-    {
-        dma_buf = heap_caps_malloc(512 * 4, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-        if(dma_buf == NULL)
-        {
-            return ESP_ERR_NO_MEM;
-        }
-    }
-    host.dma_aligned_buffer = dma_buf;
-
-    sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
-    slot_config.clk = GPIO_NUM_43;
-    slot_config.cmd = GPIO_NUM_44;
-    slot_config.d0 = GPIO_NUM_39;
-    slot_config.d1 = GPIO_NUM_40;
-    slot_config.d2 = GPIO_NUM_41;
-    slot_config.d3 = GPIO_NUM_42;
-    slot_config.width = 4;
-
-    esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-        .format_if_mount_failed = false,
-        .max_files = 10,
-        .allocation_unit_size = 16 * 1024,
-    };
-
-    return esp_vfs_fat_sdmmc_mount(SD_MOUNT_POINT, &host, &slot_config, &mount_config, &card);
+    return bsp_storage_mount(BSP_STORAGE_TYPE_SDCARD, SD_MOUNT_POINT);
 }
-
-#else
-
-static esp_err_t mount_sd_card(void)
-{
-    return ESP_ERR_NOT_SUPPORTED;
-}
-
-#endif
 
 static bool ensure_directory(const char* path)
 {

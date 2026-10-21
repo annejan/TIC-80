@@ -230,9 +230,11 @@ Two things about that are worth knowing, because both cost an evening:
   `wifi_connection_init_stack()`. Calling the connection manager cold leaves its
   event group uncreated and the first connect attempt asserts inside FreeRTOS.
 - **The radio and the SD card share one SDMMC controller.** ESP-Hosted claims it
-  during early boot, so the card has to be mounted with no-op `init` and
-  `deinit` callbacks or `esp_vfs_fat_sdmmc_mount` fails with "no available sd
-  host controller" and the card silently disappears. See `storage.c`.
+  during early boot, so the card has to be mounted without initialising the
+  controller again, or `esp_vfs_fat_sdmmc_mount` fails with "no available sd
+  host controller" and the card silently disappears. `bsp_storage_mount()`
+  (badge-bsp 1.6 and later) knows this, which is why `storage.c` leaves the
+  card to the BSP.
 
 Confirmed on hardware: the radio comes up, joins a stored network and gets a
 lease, surf lists the site and downloaded carts run, and TIC-80 keeps running at
@@ -265,7 +267,7 @@ same `*.tic80.com` certificate, so the pinned root in `certs/` covers either.
 | `display.c` | Framebuffer allocation, RGBA8888 to RGB565, scaling, blitting |
 | `audio.c` | I2S output; the blocking write is what paces the loop at 60 Hz |
 | `keymap.c` | Scancodes to `tic_key`, typed text, and the emulated pointer |
-| `storage.c` | Mounts internal flash and the SD card, picks the cart directory |
+| `storage.c` | Mounts internal flash, has the BSP mount the SD card, picks the cart directory |
 | `CMakeLists.txt` | ESP-IDF component; source lists come from `cmake/tanmatsu.cmake` |
 | `linker.lf` | Puts TIC-80's 812 KB of static buffers in PSRAM |
 | `project/` | The ESP-IDF project that builds the component into an app |
