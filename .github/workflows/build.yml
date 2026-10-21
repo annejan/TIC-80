@@ -988,7 +988,7 @@ jobs:
 
   # === Android ===
   android:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - uses: actions/checkout@v6
@@ -1094,7 +1094,7 @@ jobs:
 
   # === HTML ===
   html:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - uses: emscripten-core/setup-emsdk@v15
@@ -1323,7 +1323,7 @@ jobs:
   # === HTML, WebGPU backend ===
   # A job of its own so a WebGPU-only break cannot keep the GLES3 players off dev.
   html-webgpu:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - uses: emscripten-core/setup-emsdk@v15
