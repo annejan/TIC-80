@@ -1,0 +1,16 @@
+dependencies:
+  idf: ">=6.0.2"
+  badgeteam/badge-bsp: "=1.1.0"
+  # WiFi lives on the ESP32-C6 and is reached over ESP-Hosted. wifi-manager
+  # reads the networks the launcher already stored in NVS, so TIC-80 connects
+  # to whatever the device is configured for without asking again.
+  nicolaielectronics/wifi-manager: "=0.3.0"
+  nicolaielectronics/tanmatsu-wifi: "=1.3.1"
+  # USB HID host. The Espressif driver enumerates the device and hands over
+  # its raw reports; badgeteam/hid-host reads the report descriptor and says
+  # where the axes, the hat switch and the buttons sit in them.
+  espressif/usb_host_hid: "^1.2.1"
+  badgeteam/hid-host: "^0.3.0"
+  # Boot selection, which is how the launcher hands a cart to TIC-80 when a
+  # repository app names it as its interpreter.
+  badgeteam/appfs: "=2.1.0"
