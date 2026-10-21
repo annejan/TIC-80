@@ -57,6 +57,12 @@ set(TIC80_TANMATSU_STUDIO_SRCS
     ${TIC80_SRC}/studio/editors/sfx.c
     ${TIC80_SRC}/studio/editors/music.c
     ${TIC80_SRC}/studio/studio.c
+    ${TIC80_SRC}/studio/boot.c
+    ${TIC80_SRC}/studio/embed.c
+    ${TIC80_SRC}/studio/sound.c
+    ${TIC80_SRC}/studio/ui.c
+    ${TIC80_SRC}/studio/keyboard.c
+    ${TIC80_SRC}/studio/mouse.c
     ${TIC80_SRC}/studio/toolbar.c
     ${TIC80_SRC}/studio/rom.c
     ${TIC80_SRC}/studio/config.c
@@ -217,6 +223,7 @@ function(tic80_tanmatsu_generate_headers OUTPUT_DIR)
     set(TIC_RT_PYTHON "unknown")
     set(TIC_RT_MINISCRIPT "unknown")
     set(TIC_RT_FORTH "unknown")
+    set(TIC_RT_GRAVITY "unknown")
 
     if(EXISTS "${TIC80_ROOT}/vendor/lua/lua.h")
         file(STRINGS "${TIC80_ROOT}/vendor/lua/lua.h" LUA_MAJOR_LINE REGEX "^#define LUA_VERSION_MAJOR[ \t]+\"[^\"]+\"")
