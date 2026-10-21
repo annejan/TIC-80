@@ -1,6 +1,9 @@
 # Device parameters
 DEVICE ?= tanmatsu
-PORT ?= /dev/ttyACM0
+# The AppFS slug TIC-80 is published under. Script apps name it as their
+# interpreter, and installing under any other slug adds a second copy that
+# AppFS has no room for.
+SLUG ?= com.annejan.tic80
 
 # Build parameters
 IDF_VERSION ?= v6.0.2
@@ -69,11 +72,11 @@ badgelink:
 .PHONY: install
 install: build
 install:
-	cd badgelink/tools; ./badgelink.sh appfs upload tic80 "TIC-80" 0 ../../$(BUILD)/tic80.bin
+	cd badgelink/tools; ./badgelink.sh appfs upload $(SLUG) "TIC-80" 0 ../../$(BUILD)/tic80.bin
 
 .PHONY: run
 run:
-	cd badgelink/tools; ./badgelink.sh start tic80
+	cd badgelink/tools; ./badgelink.sh start $(SLUG)
 
 # Preparation
 
@@ -168,16 +171,11 @@ reconfigure: check-sdk checkbuildenv
 	source "$(IDF_SOURCE)" >/dev/null && idf.py $(IDF_PARAMS) reconfigure
 
 # Hardware
-
-.PHONY: flash
-flash: build
-	source "$(IDF_SOURCE)" && \
-	idf.py $(IDF_PARAMS) flash -p $(PORT)
-
-.PHONY: flashmonitor
-flashmonitor: build
-	source "$(IDF_SOURCE)" && \
-	idf.py $(IDF_PARAMS) flash -p $(PORT) monitor
+#
+# No flash, monitor or erase targets: the USB serial port a Tanmatsu shows is
+# the ESP32-C6 radio coprocessor, not the P4 that runs TIC-80, and flashing
+# would replace the launcher. The app goes in through badgelink (install, run).
+# Debugging the P4 takes an external FTDI JTAG adapter (openocdftdi, gdb).
 
 .PHONY: prepappfs
 prepappfs:
@@ -185,18 +183,6 @@ prepappfs:
 	python3 managed_components/badgeteam__appfs/tools/appfs_generate.py \
 	8192000 \
 	appfs.bin
-
-.PHONY: erase
-erase:
-	source "$(IDF_SOURCE)" && idf.py $(IDF_PARAMS) erase-flash -p $(PORT)
-
-.PHONY: monitor
-monitor:
-	source "$(IDF_SOURCE)" && idf.py $(IDF_PARAMS) monitor -p $(PORT)
-
-.PHONY: openocd
-openocd:
-	source "$(IDF_SOURCE)" && idf.py $(IDF_PARAMS) openocd
 
 .PHONY: openocdftdi
 openocdftdi:

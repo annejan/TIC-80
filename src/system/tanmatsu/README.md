@@ -44,7 +44,9 @@ Needs ESP-IDF v6.0.2 and the ESP32-P4 toolchain.
 cd src/system/tanmatsu/project
 make prepare        # only once: clones ESP-IDF into ./esp-idf
 make build
-make flashmonitor   # or: make install && make run, to go through badgelink
+make badgelink      # only once: fetches the badgelink tool
+make install        # uploads into AppFS over USB
+make run
 ```
 
 If ESP-IDF is already installed elsewhere, point at it instead of running
@@ -60,8 +62,8 @@ The `.IDF_PATH` and `.IDF_TOOLS_PATH` files the badge.team Makefile also looks
 for do not work: it appends its own path to whatever they contain, whether or
 not they exist, and the result is two paths in one variable.
 
-The build produces `build/tanmatsu/tic80.bin`, around 1 MB, which fits both the
-2 MB OTA slots and the 8 MB AppFS partition.
+The build produces `build/tanmatsu/tic80.bin`, around 1.8 MB, which goes into
+the 8 MB AppFS partition next to the other apps.
 
 ## Controls
 
@@ -149,11 +151,16 @@ purple diamond, the icon top right turns from a bug into a USB symbol.
 
 ```sh
 cd badgelink/tools
-./badgelink.sh appfs upload tic80 "TIC-80" 1 path/to/tic80.bin
-./badgelink.sh fs mkdir /int/apps/tic80
-./badgelink.sh fs upload /int/apps/tic80/metadata.json  ../../../appfs/metadata.json
-./badgelink.sh fs upload /int/apps/tic80/icon32.png     ../../../appfs/icon32.png
+./badgelink.sh appfs upload com.annejan.tic80 "TIC-80" 1 path/to/tic80.bin
+./badgelink.sh fs mkdir /int/apps/com.annejan.tic80
+./badgelink.sh fs upload /int/apps/com.annejan.tic80/metadata.json ../../../appfs/metadata.json
+./badgelink.sh fs upload /int/apps/com.annejan.tic80/icon32.png    ../../../appfs/icon32.png
 ```
+
+`com.annejan.tic80` is the slug TIC-80 is published under in the Tanmatsu app
+repository, and the one carts name as their interpreter (see Carts as apps).
+Installing under another slug adds a second copy, and AppFS rarely has room
+for two.
 
 The launcher takes the name, description and icon from that metadata; without
 it the app still runs but shows the default icon. `appfs/icon32.png` is
