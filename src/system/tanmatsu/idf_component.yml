@@ -1,6 +1,6 @@
 dependencies:
   idf: ">=6.0.2"
-  badgeteam/badge-bsp: "=1.6.1"
+  badgeteam/badge-bsp: "=2.0.0"
   # WiFi lives on the ESP32-C6 and is reached over ESP-Hosted. wifi-manager
   # reads the networks the launcher already stored in NVS, so TIC-80 connects
   # to whatever the device is configured for without asking again.
