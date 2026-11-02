@@ -63,7 +63,8 @@ set(TIC80_TANMATSU_STUDIO_SRCS
     ${TIC80_SRC}/studio/ui.c
     ${TIC80_SRC}/studio/keyboard.c
     ${TIC80_SRC}/studio/mouse.c
-    ${TIC80_SRC}/studio/toolbar.c
+    ${TIC80_SRC}/studio/menubar.c
+    ${TIC80_SRC}/studio/studiomenu.c
     ${TIC80_SRC}/studio/rom.c
     ${TIC80_SRC}/studio/config.c
     ${TIC80_SRC}/studio/fs.c
