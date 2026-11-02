@@ -107,7 +107,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/stubs"
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript gravity)
           for lang in "${langs[@]}"; do
             # Every language flag on every pass, so nothing can stick in the
             # cache from the previous one — which is what the --fresh here used
@@ -262,7 +262,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/stubs"
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript gravity)
           for lang in "${langs[@]}"; do
             # Every language flag on every pass, so nothing can stick in the
             # cache from the previous one — which is what the --fresh here used
@@ -337,14 +337,25 @@ jobs:
           sudo rm -f /etc/apt/sources.list.d/*google* /etc/apt/sources.list.d/*chrome* 2>/dev/null || true
           sudo sed -i '/dl\.google\.com/d' /etc/apt/sources.list 2>/dev/null || true
           sudo apt-get update
-          # The X11 trio is sokol_app's link line and ALSA is sokol_audio's;
-          # the rest is what the studio itself needs.
-          sudo apt-get install gcc-12 g++-12 libx11-dev libxi-dev libxcursor-dev libglu1-mesa-dev libasound2-dev libpulse-dev libaudio-dev libsamplerate0-dev libcurl4-openssl-dev -y
+          # The X11 trio and the GLES pair are sokol_app's link line and ALSA is
+          # sokol_audio's; the rest is what the studio itself needs.
+          sudo apt-get install gcc-12 g++-12 libx11-dev libxi-dev libxcursor-dev libglu1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev libasound2-dev libpulse-dev libaudio-dev libsamplerate0-dev libcurl4-openssl-dev -y
           sudo ln -s -f /usr/bin/gcc-12 /usr/bin/gcc
           sudo ln -s -f /usr/bin/g++-12 /usr/bin/g++
           # the generator the builds use; the image carries it already
           command -v ninja >/dev/null || sudo apt-get install -y ninja-build
           command -v ccache >/dev/null || sudo apt-get install -y ccache
+
+      - name: Generate GLES/EGL stubs
+        run: |
+          for lib in /usr/lib/aarch64-linux-gnu/libGLESv2.so.2 /usr/lib/aarch64-linux-gnu/libEGL.so.1; do \
+              outname=$(basename $lib | sed 's/-2.0//; s/\.so\..*/.so/') && \
+              echo "Generating stubs for $outname from $lib" && \
+              nm -D $lib | grep " T " | awk '{print "void " $3 "(){}"}' > stubs.c && \
+              sudo rm -f /usr/lib/aarch64-linux-gnu/$outname && \
+              soname=$(basename $lib | sed 's/-2.0//') && \
+              sudo gcc -shared -Wl,-soname,$soname -o /usr/lib/aarch64-linux-gnu/$outname stubs.c; \
+          done
 
       - name: ccache
         uses: actions/cache@v4
@@ -356,7 +367,9 @@ jobs:
       - name: Build
         run: |
           cd build
-          cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_ALL=ON ..
+          # GLES3/EGL, not desktop GL: sokol asks for an OpenGL 4.3 core
+          # context, while the Pis this artifact serves top out at 3.1 (#3147).
+          cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DUSE_GLES2=ON -DBUILD_WITH_ALL=ON ..
           cmake --build . --parallel
           # The universal export stub is this same binary (console.c appends the
           # cart to it), so keep it before Build Pro overwrites it below. It goes
@@ -377,7 +390,7 @@ jobs:
       - name: Build Pro
         run: |
           cd build
-          cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DBUILD_PRO=On -DBUILD_WITH_ALL=ON ..
+          cmake -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DUSE_GLES2=ON -DBUILD_PRO=On -DBUILD_WITH_ALL=ON ..
           cmake --build . --parallel
 
       # No build here: the universal stub is the binary the Build step kept
@@ -403,7 +416,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/stubs"
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript gravity)
           for lang in "${langs[@]}"; do
             # Every language flag on every pass, so nothing can stick in the
             # cache from the previous one — which is what the --fresh here used
@@ -482,7 +495,8 @@ jobs:
               echo "Generating stubs for $outname from $lib" && \
               nm -D $lib | grep " T " | awk '{print "void " $3 "(){}"}' > stubs.c && \
               sudo rm -f /usr/lib/aarch64-linux-gnu/$outname && \
-              sudo gcc -shared -Wl,-soname,$outname -o /usr/lib/aarch64-linux-gnu/$outname stubs.c; \
+              soname=$(basename $lib | sed 's/-2.0//') && \
+              sudo gcc -shared -Wl,-soname,$soname -o /usr/lib/aarch64-linux-gnu/$outname stubs.c; \
           done
 
       - name: Build
@@ -667,7 +681,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/stubs"
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript gravity)
           for lang in "${langs[@]}"; do
             # Every language flag on every pass, so nothing can stick in the
             # cache from the previous one — which is what the --fresh here used
@@ -810,7 +824,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/stubs"
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript gravity)
           for lang in "${langs[@]}"; do
             # Every language flag on every pass, so nothing can stick in the
             # cache from the previous one — which is what the --fresh here used
@@ -988,7 +1002,8 @@ jobs:
 
   # === Android ===
   android:
-    runs-on: ubuntu-22.04
+    # 24.04, not -latest: setup-ruby has no 2.6.10 for 26.04 (#3107).
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v6
@@ -1096,7 +1111,8 @@ jobs:
 
   # === HTML ===
   html:
-    runs-on: ubuntu-22.04
+    # As the android job: setup-ruby has no 2.6.10 for 26.04 (#3107).
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: emscripten-core/setup-emsdk@v15
@@ -1154,7 +1170,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript gravity)
           stage="$GITHUB_WORKSPACE/build/players"
           rm -rf "$stage"
           for lang in "${langs[@]}"; do
@@ -1191,7 +1207,7 @@ jobs:
           # back the same way: the SDL layer's "Unable to initialize SDL Video"
           # is in a build of it and in no build of the sokol layer, which is
           # what these three passes now build.
-          files=("$stage"/{lua,ruby,js,moon,yue,fennel,scheme,squirrel,wren,wasm,janet,python,miniscript,forth,gravity}/tic80*.wasm)
+          files=("$stage"/{lua,ruby,js,moon,yue,fennel,scheme,squirrel,wren,wasm,janet,python,miniscript,gravity}/tic80*.wasm)
           for f in "${files[@]}"; do
             if ! grep -qa "SPRITE EDITOR" "$f"; then
               echo "player without editors: $f — BUILD_EDITORS=ON did not take" >&2
@@ -1233,7 +1249,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript gravity)
           for lang in "${langs[@]}"; do
             flags=(-DBUILD_WITH_ALL=OFF)
             for l in "${langs[@]}"; do
@@ -1248,7 +1264,7 @@ jobs:
           # An identical pair means a language flag did not take, the same guard
           # the native jobs run on their binaries: a wasm stub carries one
           # runtime, so fourteen of them cannot be alike.
-          files=("$GITHUB_WORKSPACE"/build/bin/tic80{lua,ruby,js,moon,yue,fennel,scheme,squirrel,wren,wasm,janet,python,miniscript,forth,gravity}.wasm)
+          files=("$GITHUB_WORKSPACE"/build/bin/tic80{lua,ruby,js,moon,yue,fennel,scheme,squirrel,wren,wasm,janet,python,miniscript,gravity}.wasm)
           for f in "${files[@]}"; do
             if [ ! -f "$f" ]; then echo "missing stub: $f" >&2; exit 1; fi
           done
@@ -1325,7 +1341,8 @@ jobs:
   # === HTML, WebGPU backend ===
   # A job of its own so a WebGPU-only break cannot keep the GLES3 players off dev.
   html-webgpu:
-    runs-on: ubuntu-22.04
+    # As the html job: setup-ruby has no 2.6.10 for 26.04 (#3107).
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: emscripten-core/setup-emsdk@v15
@@ -1347,7 +1364,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript gravity)
           stage="$GITHUB_WORKSPACE/build/players-webgpu"
           rm -rf "$stage"
           for lang in "${langs[@]}"; do
@@ -1387,7 +1404,7 @@ jobs:
         run: |
           set -euo pipefail
           stage="$GITHUB_WORKSPACE/build/players-webgpu"
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript gravity)
           files=()
           for lang in "${langs[@]}"; do
             js="$stage/$lang/webgpu/tic80.js"

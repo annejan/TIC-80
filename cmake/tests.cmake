@@ -34,21 +34,18 @@ if(BUILD_TESTS)
         tic80_add_test(js-test)
     endif()
 
-    # The strip is tested against the core alone: linking tic80studio instead
+    # The menu bar is tested against the core alone: linking tic80studio instead
     # would hide a call into studio.c, which is the one thing this test is for.
-    # version.h is generated into the build directory, and the studio target is
-    # what usually publishes that path.
-    # The strip draws its icons and sets its hand cursor through the ui module,
-    # so that builds here too.
-    add_executable(toolbar-test
-        ${CMAKE_SOURCE_DIR}/tests/toolbar.c
-        ${CMAKE_SOURCE_DIR}/src/studio/toolbar.c
+    # The bar draws its icons and cursor through the ui module, so that builds
+    # here too.
+    add_executable(menubar-test
+        ${CMAKE_SOURCE_DIR}/tests/menubar.c
+        ${CMAKE_SOURCE_DIR}/src/studio/menubar.c
         ${CMAKE_SOURCE_DIR}/src/studio/ui.c
     )
 
-    target_include_directories(toolbar-test PRIVATE ${CMAKE_BINARY_DIR})
-    target_link_libraries(toolbar-test PRIVATE tic80core)
-    tic80_add_test(toolbar-test)
+    target_link_libraries(menubar-test PRIVATE tic80core)
+    tic80_add_test(menubar-test)
 
     # The gamepad header is compiled with its test backend here: the slot
     # policy, the deadzone and the stick are exercised with no pad plugged in,
@@ -74,7 +71,7 @@ if(BUILD_TESTS)
     tic80_add_test(sound-test)
 
     # The icon and the cursor are a module of their own, and link with the core
-    # alone: the strip is one of their callers, not their owner.
+    # alone: the bar is one of their callers, not their owner.
     add_executable(ui-test
         ${CMAKE_SOURCE_DIR}/tests/ui.c
         ${CMAKE_SOURCE_DIR}/src/studio/ui.c
@@ -128,11 +125,33 @@ if(BUILD_TESTS)
     target_link_libraries(embed-test PRIVATE tic80core)
     tic80_add_test(embed-test)
 
+    # The editor history is a byte buffer and the deltas between its commits:
+    # the standard library is all it needs.
+    add_executable(history-test
+        ${CMAKE_SOURCE_DIR}/tests/history.c
+        ${CMAKE_SOURCE_DIR}/src/ext/history.c
+    )
+
+    # The module allocates through these names so the test can fail one
+    # allocation and count what stays alive.
+    target_compile_definitions(history-test PRIVATE HISTORY_TEST_ALLOC)
+
+    tic80_add_test(history-test)
+
+    # The same module with a budget small enough that a few commits evict.
+    add_executable(history-limit-test
+        ${CMAKE_SOURCE_DIR}/tests/history_limit.c
+        ${CMAKE_SOURCE_DIR}/src/ext/history.c
+    )
+
+    target_compile_definitions(history-limit-test PRIVATE HISTORY_MAX_BYTES=25)
+    tic80_add_test(history-limit-test)
+
     # The console is the module whose face is a request the host answers, and
     # this test is its host: it builds the module with the core and the modules
     # it names — no studio anywhere — and every command it is given ends in an
-    # ask the test takes and answers. Net is compiled without USE_NAETT, which
-    # is net's own no-network shape: the test opens no sockets either.
+    # ask the test takes and answers. Net is the test's own (tests/console.c):
+    # a request is held until the test answers it, and no socket is opened.
     add_executable(console-test
         ${CMAKE_SOURCE_DIR}/tests/console.c
         ${CMAKE_SOURCE_DIR}/src/studio/screens/console.c
@@ -142,7 +161,6 @@ if(BUILD_TESTS)
         ${CMAKE_SOURCE_DIR}/src/studio/screens/start.c
         ${CMAKE_SOURCE_DIR}/src/studio/embed.c
         ${CMAKE_SOURCE_DIR}/src/studio/fs.c
-        ${CMAKE_SOURCE_DIR}/src/studio/net.c
         ${CMAKE_SOURCE_DIR}/src/ext/json.c
     )
 

@@ -23,7 +23,6 @@
 #pragma once
 
 #include "studio/studio.h"
-#include "studio/toolbar.h"
 
 typedef struct Music Music;
 
@@ -35,13 +34,17 @@ struct Music
 
     u8 track;
     s32 frame;
+    s32 row;
+
+    s32 startFrame;
+    s32 startRow;
 
     struct
     {
         s32 pos;
         s32 start;
         bool active;
-
+        bool changed;
     } scroll;
 
     bool beat34;
@@ -99,6 +102,12 @@ struct Music
 
 extern const ClipboardOps MusicClipboard;
 
-void musicBand(void*, Toolbar*);
 void initMusic(Music*, Studio* studio, tic_music* src);
 void freeMusic(Music* music);
+void musicToggleFollow(Music*);
+void musicToggleLoop(Music*);
+void musicToggleSustain(Music*);
+void musicPlayFromNow(Music*);
+void musicPlayFrame(Music*);
+void musicPlayTrack(Music*, bool);
+void musicStop(Music*);

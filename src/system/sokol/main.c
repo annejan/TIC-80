@@ -336,6 +336,9 @@ static const u8 Keymap[] =
         [SAPP_KEYCODE_RIGHT_CONTROL] = tic_key_ctrl,
         [SAPP_KEYCODE_LEFT_ALT] = tic_key_alt,
         [SAPP_KEYCODE_RIGHT_ALT] = tic_key_alt,
+        // Cmd is the Mac's shortcut key, and is control here like SDL's GUI.
+        [SAPP_KEYCODE_LEFT_SUPER] = tic_key_ctrl,
+        [SAPP_KEYCODE_RIGHT_SUPER] = tic_key_ctrl,
 };
 
 static tic_key translate_key(sapp_keycode code)
@@ -855,6 +858,11 @@ static void event_cb(const sapp_event* event)
             platform.keyboard.lastCode = event->key_code;
             handle_key(event->key_code, true);
 
+            // A Cmd press after a focus change can evade sokol's flag tracking,
+            // but every key held with it carries it in its modifiers.
+            if(event->modifiers & SAPP_MODIFIER_SUPER)
+                platform.keyboard.state[tic_key_ctrl] = true;
+
 #if defined(__EMSCRIPTEN__)
             if(machine_key(event->key_code, event->modifiers))
                 sapp_consume_event();
@@ -866,6 +874,10 @@ static void event_cb(const sapp_event* event)
             break;
 
         case SAPP_EVENTTYPE_CHAR:
+            // A Command combination is a shortcut, not text.
+            if(event->modifiers & SAPP_MODIFIER_SUPER)
+                break;
+
             // Control characters are keys of their own, not text.
             if(event->char_code >= 32 && event->char_code < 127 && platform.keyboard.head - platform.keyboard.tail < (s32)COUNT_OF(platform.keyboard.queue))
                 platform.keyboard.queue[platform.keyboard.head++ % COUNT_OF(platform.keyboard.queue)] = (char)event->char_code;
@@ -1072,8 +1084,9 @@ static void frame_cb(void)
     // in which nothing took one — the browsers, the menus — drops what it was
     // carrying, or the next text field would get a pocketful typed somewhere
     // else. A frame that took some keeps the rest of the burst, since a slow
-    // text field reads one character a tick.
-    if(!platform.keyboard.taken)
+    // text field reads one character a tick. A frame with no tick has nobody
+    // to take them, so they wait.
+    if(ticked && !platform.keyboard.taken)
         platform.keyboard.head = platform.keyboard.tail = 0;
 
     platform.keyboard.taken = false;
@@ -1230,7 +1243,8 @@ static sapp_desc app_desc(void)
         .swap_interval = 1,
         .html5.canvas_resize = false,
         .enable_clipboard = true,
-        .clipboard_size = 4096,
+        // The largest code the editor takes, PRO's TIC_CODE_SIZE, plus the terminator.
+        .clipboard_size = TIC_CODE_SIZE + 1,
 #if !defined(__EMSCRIPTEN__)
         // A handful; the layer still loads the first of them only.
         .enable_dragndrop = true,
@@ -1387,6 +1401,45 @@ static bool run_cli(void)
     return true;
 }
 
+#if defined(_WIN32)
+
+// A command-line run keeps the console it was given, and so does a terminal
+// launch; only a GUI launch that owns its console loses it.
+static bool command_requested(s32 argc, char** argv)
+{
+    for(s32 i = 1; i < argc; i++)
+        if(!strcmp(argv[i], "--cmd") || !strncmp(argv[i], "--cmd=", 6))
+            return true;
+
+    return false;
+}
+
+// One attached process means Windows made this console for the app alone, as
+// it does for an Explorer launch. A shell or terminal is a second one, and
+// that console is not ours to close.
+static bool win32_console_owned(void)
+{
+    DWORD pids[2];
+
+    return GetConsoleProcessList(pids, 2) == 1;
+}
+
+static void win32_console_detach_if_gui(bool command_line)
+{
+    if(command_line || !win32_console_owned())
+        return;
+
+    const HWND console = GetConsoleWindow();
+
+    if(console)
+        ShowWindow(console, SW_HIDE);
+
+    if(!FreeConsole() && console)
+        ShowWindow(console, SW_SHOW);
+}
+
+#endif
+
 // The layer owns the entry point: sokol_app makes the window before anything
 // of ours runs, and the console-only run must not make one.
 int main(int argc, char* argv[])
@@ -1408,8 +1461,21 @@ int main(int argc, char* argv[])
     platform.appFolder = getAppFolder();
     make_folder(platform.appFolder);
 
-    if(cli_requested(argc, argv) && run_cli())
+    // The flags are read before run_cli: the studio's argparse rewrites argv
+    // in place, and a second scan after it declines would walk the compacted
+    // array to its NULL.
+    const bool cli = cli_requested(argc, argv);
+
+#if defined(_WIN32)
+    const bool command = command_requested(argc, argv);
+#endif
+
+    if(cli && run_cli())
         return 0;
+
+#if defined(_WIN32)
+    win32_console_detach_if_gui(cli || command);
+#endif
 
     sapp_desc desc = app_desc();
     sapp_run(&desc);
@@ -1561,7 +1627,22 @@ void tic_sys_preseed(void)
 bool tic_sys_keyboard_text(char* text)
 {
     if(platform.keyboard.tail == platform.keyboard.head)
-        return false;
+    {
+#if defined(TOUCH_INPUT_SUPPORT)
+        // The on-screen keyboard sends no character events; like the SDL touch
+        // keyboard, its keys are what the studio's fallback reads.
+        const ControlsState* controls = controls_state();
+
+        for(s32 i = 0; i < tic_keys_count; i++)
+            if(controls->keys[i])
+                return false;
+#endif
+
+        // Text belongs to this layer: an empty queue is an empty answer, not a
+        // reason to rebuild the character from the keys and lose the OS's case.
+        *text = '\0';
+        return true;
+    }
 
     *text = platform.keyboard.queue[platform.keyboard.tail++ % COUNT_OF(platform.keyboard.queue)];
     platform.keyboard.taken = true;

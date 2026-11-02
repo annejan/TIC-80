@@ -23,7 +23,6 @@
 #pragma once
 
 #include "studio/studio.h"
-#include "studio/toolbar.h"
 #include "tilesheet.h"
 
 typedef struct Sprite Sprite;
@@ -50,7 +49,6 @@ struct Sprite
     u8 size;
     u8 brushSize;
     u16 x, y;
-    bool advanced;
     bool hexindex;
 
     tic_blit blit;
@@ -60,6 +58,7 @@ struct Sprite
         bool edit;
         bool vbank1;
         s32 focus;
+        const tic_palette* preview;
     } palette;
 
     struct
@@ -74,6 +73,7 @@ struct Sprite
     struct
     {
         bool edit;
+        bool show;
         s32 pos;
     } flags;
 
@@ -114,6 +114,20 @@ typedef struct
 
 extern const ClipboardOps SpriteClipboard;
 
-void spriteBand(void*, Toolbar*);
 void initSprite(Sprite*, Studio* studio, tic_tiles* src);
 void freeSprite(Sprite*);
+enum
+{
+    SPRITE_TOOL_FLIP_HORZ,
+    SPRITE_TOOL_FLIP_VERT,
+    SPRITE_TOOL_ROTATE,
+    SPRITE_TOOL_ERASE,
+};
+
+void spriteSelectBank(Sprite*, s32 bank);
+void spriteSelectPage(Sprite*, s32 page);
+void spriteSetBpp(Sprite*, tic_bpp);
+void spriteSetSize(Sprite*, s32 size);
+void spriteSetBrushSize(Sprite*, s32 size);
+void spriteSetMode(Sprite*, s32 mode);
+void spriteToolAction(Sprite*, s32 tool);

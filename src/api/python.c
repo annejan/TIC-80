@@ -107,6 +107,20 @@ static bool py_btnp(int argc, py_Ref argv)
     return true;
 }
 
+// btnr(id: int) -> bool
+// u32 (*btnr)(tic_mem*, s32)
+static bool py_btnr(int argc, py_Ref argv)
+{
+    (void)argc;
+    PY_CHECK_ARG_TYPE(0, tp_int);
+    s32 button_id = (s32)(py_toint(py_arg(0)));
+
+    tic_core* core = get_core();
+    u32 released = core->api.btnr((tic_mem*)core, button_id & 0x1f);
+    py_newbool(py_retval(), released);
+    return true;
+}
+
 // cls(color=0)
 // void (*cls)(tic_mem*, u8)
 static bool py_cls(int argc, py_Ref argv)
@@ -223,11 +237,21 @@ static bool py_circb(int argc, py_Ref argv)
     return true;
 }
 
-// clip(x: int, y: int, width: int, height: int)
+// clip(x: int | None = None, y: int | None = None, width: int | None = None, height: int | None = None)
 // void (*clip)(tic_mem*, s32, s32, s32, s32)
 static bool py_clip(int argc, py_Ref argv)
 {
     (void)argc;
+    tic_core* core = get_core();
+
+    // clip() with no arguments resets the clipping region to the whole screen
+    if(py_isnone(py_arg(0)) && py_isnone(py_arg(1)) && py_isnone(py_arg(2)) && py_isnone(py_arg(3)))
+    {
+        core->api.clip((tic_mem*)core, 0, 0, TIC80_WIDTH, TIC80_HEIGHT);
+        py_newnone(py_retval());
+        return true;
+    }
+
     for(int i = 0; i < 4; i++)
     {
         PY_CHECK_ARG_TYPE(i, tp_int);
@@ -237,7 +261,6 @@ static bool py_clip(int argc, py_Ref argv)
     s32 width = (s32)(py_toint(py_arg(2)));
     s32 height = (s32)(py_toint(py_arg(3)));
 
-    tic_core* core = get_core();
     core->api.clip((tic_mem*)core, x, y, width, height);
     py_newnone(py_retval());
     return true;
@@ -401,6 +424,25 @@ static bool py_keyp(int argc, py_Ref argv)
     tic_core* core = get_core();
     bool pressed = core->api.keyp((tic_mem*)core, (tic_key)code, hold, period);
     py_newbool(py_retval(), pressed);
+    return true;
+}
+
+// keyr(code=-1) -> bool
+// bool (*keyr)(tic_mem*, tic_key)
+static bool py_keyr(int argc, py_Ref argv)
+{
+    (void)argc;
+    PY_CHECK_ARG_TYPE(0, tp_int);
+    s32 code = (s32)(py_toint(py_arg(0)));
+
+    if(code <= -1 || code >= tic_keys_count)
+    {
+        code = tic_key_unknown;
+    }
+
+    tic_core* core = get_core();
+    bool released = core->api.keyr((tic_mem*)core, (tic_key)code);
+    py_newbool(py_retval(), released);
     return true;
 }
 
@@ -1304,13 +1346,14 @@ static void bind_pkpy_v2()
     py_GlobalRef mod = py_getmodule("__main__");
     py_bind(mod, "btn(id: int) -> bool", py_btn);
     py_bind(mod, "btnp(id: int, hold=-1, period=-1) -> bool", py_btnp);
+    py_bind(mod, "btnr(id: int) -> bool", py_btnr);
     py_bind(mod, "cls(color=0)", py_cls);
     py_bind(mod, "spr(id: int, x: int, y: int, colorkey=-1, scale=1, flip=0, rotate=0, w=1, h=1)",
             py_spr);
     py_bind(mod, "print(text, x=0, y=0, color=15, fixed=False, scale=1, alt=False)", py_print);
     py_bind(mod, "circ(x: int, y: int, radius: int, color: int)", py_circ);
     py_bind(mod, "circb(x: int, y: int, radius: int, color: int)", py_circb);
-    py_bind(mod, "clip(x: int, y: int, width: int, height: int)", py_clip);
+    py_bind(mod, "clip(x: int | None = None, y: int | None = None, width: int | None = None, height: int | None = None)", py_clip);
     py_bind(mod, "elli(x: int, y: int, a: int, b: int, color: int)", py_elli);
     py_bind(mod, "ellib(x: int, y: int, a: int, b: int, color: int)", py_ellib);
     py_bind(mod, "exit()", py_exit);
@@ -1319,6 +1362,7 @@ static void bind_pkpy_v2()
     py_bind(mod, "font(text: str, x: int, y: int, chromakey: int, char_width=8, char_height=8, fixed=False, scale=1, alt=False) -> int", py_font);
     py_bind(mod, "key(code=-1) -> bool", py_key);
     py_bind(mod, "keyp(code=-1, hold=-1, period=-17) -> bool", py_keyp);
+    py_bind(mod, "keyr(code=-1) -> bool", py_keyr);
     py_bind(mod, "line(x0: float, y0: float, x1: float, y1: float, color: int)", py_line);
     py_bind(mod, "map(x=0, y=0, w=30, h=17, sx=0, sy=0, colorkey=-1, scale=1, remap=None)", py_map);
     py_bind(mod, "memcpy(dest: int, source: int, size: int)", py_memcpy);

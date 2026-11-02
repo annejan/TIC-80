@@ -77,23 +77,6 @@
 #define DEFAULT_CHMOD               0755
 
 // clang-format off
-#define HELP_CMD_LIST(macro)    \
-    macro(version)              \
-    macro(welcome)              \
-    macro(spec)                 \
-    macro(ram)                  \
-    macro(vram)                 \
-    macro(commands)             \
-    macro(api)                  \
-    macro(keys)                 \
-    macro(buttons)              \
-    macro(startup)              \
-    macro(hotkeys)              \
-    macro(terms)                \
-    macro(license)
-// clang-format on
-
-// clang-format off
 #define IMPORT_CMD_LIST(macro)  \
     macro(binary)               \
     macro(tiles)                \
@@ -112,25 +95,6 @@
     macro(h)                    \
     macro(vbank)                \
     macro(bpp)
-// clang-format on
-
-// clang-format off
-#define EXPORT_CMD_LIST(macro)  \
-    macro(win)                  \
-    macro(linux)                \
-    macro(linuxarm)             \
-    macro(mac)                  \
-    macro(macintel)             \
-    macro(html)                 \
-    macro(binary)               \
-    macro(tiles)                \
-    macro(sprites)              \
-    macro(map)                  \
-    macro(mapimg)               \
-    macro(sfx)                  \
-    macro(music)                \
-    macro(screen)               \
-    macro(help)
 // clang-format on
 
 #if defined(TIC80_PRO)
@@ -187,6 +151,7 @@ static const struct HotkeysRowGeneral
         {"F7", "Assign cover image while in game."},
         {"F8", "Take a screenshot."},
         {"F9", "Start/stop GIF video recording."},
+        {"F10", "Focus the menu bar."},
         {"F11/ALT+ENTER", "Fullscreen/window mode."},
         {
             "CTRL+Q",
@@ -254,6 +219,7 @@ static const struct HotkeysRowSpriteEditor
 } HotkeysTextSpriteEditor[] =
     {
         {"TAB", "Switch tiles/sprites."},
+        {"CTRL+LEFT/RIGHT", "Switch sheet page."},
         {"[]", "Choose previous/next palette color."},
         {"-/=", "Change brush size."},
         {"SCROLL", "Canvas zoom."},
@@ -312,6 +278,7 @@ static const struct HotkeysRowMusicEditor
         {"SHIFT+ENTER", "Play pattern from cursor position in the music editor."},
         {"ENTER", "Play frame."},
         {"SPACE", "Play track."},
+        {"SHIFT+SPACE", "Reset track."},
         {"CTRL+F", "Follow."},
         {"Z,X,C,V,B,N,M", "Play notes corresponding to one octave (bottom row of QWERTY layout) in tracker mode."},
         {"S,D,G,H,J", "Play notes corresponding to sharps and flats (home row of QWERTY layout) in tracker mode."},
@@ -525,6 +492,18 @@ static tic_point cursorPos(Console* console)
         offset / CONSOLE_BUFFER_WIDTH};
 }
 
+// Where the next symbol lands: the input's cursor while it is being typed,
+// the output's own head otherwise.
+static s32 printOffset(Console* console)
+{
+    return cursorOffset(console) + (s32)console->input.pos;
+}
+
+static s32 printColumn(Console* console)
+{
+    return printOffset(console) % CONSOLE_BUFFER_WIDTH;
+}
+
 static void nextLine(Console* console)
 {
     console->cursor.pos.x = 0;
@@ -623,6 +602,14 @@ static void printLine(Console* console)
     consolePrint(console, "\n", 0);
 }
 
+// Ends the current line only if it has something on it: an async flow may
+// already have ended it, and a second newline is a blank one.
+static void printNewLine(Console* console)
+{
+    if(printColumn(console))
+        printLine(console);
+}
+
 static void clearSelection(Console* console)
 {
     ZEROMEM(console->select);
@@ -630,6 +617,8 @@ static void clearSelection(Console* console)
 
 static void commandDoneLine(Console* console, bool newLine)
 {
+    console->progressLine = -1;
+
     if(!console->args.cli)
     {
         if(newLine)
@@ -845,6 +834,8 @@ static void onDemoLoaded(Console* console, const ConsoleAnswer* answer)
     printBack(console, "\ncart ");
     printFront(console, answer->name);
     printBack(console, " loaded!\n");
+
+    commandDone(console);
 }
 
 static void onLoadDemoCommandConfirmed(Console* console, const void* data)
@@ -878,6 +869,10 @@ static void printCartLoaded(Console* console, const char* name)
 static void onLoaded(Console* console, const ConsoleAnswer* answer)
 {
     printCartLoaded(console, answer->name);
+
+    // The host gives the cart its name: the load is over here, not where it
+    // asked.
+    commandDone(console);
 }
 
 static void onCartLoaded(Console* console, const char* name, const char* section)
@@ -1107,7 +1102,10 @@ static void onLoadCommandConfirmed(Console* console, const void* data)
     else
         printUsage(console, console->desc->command);
 
-    commandDone(console);
+    // A load that asked the host for the cart's name finishes on that answer,
+    // where the message and the prompt are printed.
+    if(console->ask.kind == CONSOLE_ASK_NONE)
+        commandDone(console);
 }
 
 typedef void (*ConsoleConfirmCallback)(Console* console, const void* data);
@@ -1392,7 +1390,7 @@ static void tabCompleteLanguages(TabCompleteData* data)
 
 static void tabCompleteExport(TabCompleteData* data)
 {
-#define EXPORT_CMD_DEF(name) addTabCompleteOption(data, #name);
+#define EXPORT_CMD_DEF(name, label) addTabCompleteOption(data, #name);
     EXPORT_CMD_LIST(EXPORT_CMD_DEF)
 #undef EXPORT_CMD_DEF
     finishTabComplete(data);
@@ -1737,16 +1735,20 @@ static void onConfigCommand(Console* console)
         }
         else if(strcmp(console->desc->params->key, "default") == 0)
         {
+            // The demo load finishes on the host's answer, where the prompt is
+            // printed: none of it is left for this command to end.
             if(console->desc->count == 1)
             {
                 onLoadDemoCommand(console, tic_get_script(console->tic));
+                return;
             }
-            else
+
+            FOREACH_LANG(script)
             {
-                FOREACH_LANG(script)
+                if(strcmp(console->desc->params[1].key, script->name) == 0)
                 {
-                    if(strcmp(console->desc->params[1].key, script->name) == 0)
-                        onLoadDemoCommand(console, script);
+                    onLoadDemoCommand(console, script);
+                    return;
                 }
             }
         }
@@ -1784,16 +1786,17 @@ typedef struct
 
 static void onFileImported(Console* console, const char* filename, bool result)
 {
+    printNewLine(console);
+
     if(result)
     {
-        printLine(console);
         printBack(console, filename);
         printBack(console, " imported :)");
     }
     else
     {
-        char buf[TICNAME_MAX];
-        sprintf(buf, "\nerror: %s not imported :(", filename);
+        char buf[TICNAME_MAX + sizeof "error:  not imported :("];
+        sprintf(buf, "error: %s not imported :(", filename);
         printError(console, buf);
     }
 
@@ -2039,16 +2042,19 @@ static void onImportCommand(Console* console)
 
 static void onFileExported(Console* console, const char* filename, bool result)
 {
+    // The export may have waited on the network: its own line is where this
+    // one starts, and it is already ended then.
+    printNewLine(console);
+
     if(result)
     {
-        printLine(console);
         printBack(console, filename);
         printBack(console, " exported :)");
     }
     else
     {
-        char buf[TICNAME_MAX + sizeof "\nerror:  not exported :("];
-        sprintf(buf, "\nerror: %s not exported :(", filename);
+        char buf[TICNAME_MAX + sizeof "error:  not exported :("];
+        sprintf(buf, "error: %s not exported :(", filename);
         printError(console, buf);
     }
 
@@ -2100,7 +2106,20 @@ static void onExportGet(const net_get_data* data)
     {
         case net_get_progress:
         {
-            console->cursor.pos.x = 0;
+            // A trailing newline can leave the cursor on the row past the
+            // buffer: scroll before measuring, or the row would be outside it.
+            scrollConsole(console);
+
+            // Redraw the GET line in place: a fetch reports every chunk, and a
+            // line per report buries the result. The first report marks its row.
+            if(console->progressLine < 0)
+                console->progressLine = printOffset(console) / CONSOLE_BUFFER_WIDTH * CONSOLE_BUFFER_WIDTH;
+
+            console->cursor.pos = (tic_point){0, console->progressLine / CONSOLE_BUFFER_WIDTH};
+            console->input.text = console->text + console->progressLine;
+            console->input.pos = 0;
+            memset(console->input.text, 0, CONSOLE_BUFFER_WIDTH);
+
             printf("\r");
             printBack(console, "GET ");
             printFront(console, data->url);
@@ -2111,6 +2130,7 @@ static void onExportGet(const net_get_data* data)
         }
         break;
         case net_get_error:
+            printNewLine(console);
             printError(console, "file downloading error :(");
             commandDone(console);
             free(exportData);
@@ -2135,7 +2155,7 @@ static void onNativeExportGet(const net_get_data* data)
 
             s32 size = data->done.size;
 
-            printLine(console);
+            printNewLine(console);
 
             const char* path = tic_fs_path(console->fs, filename);
             void* buf = NULL;
@@ -2231,8 +2251,8 @@ static bool tryExportNativeFromLocalTemplate(Console* console, const char* name,
                 {
                     chmod(path, DEFAULT_CHMOD);
 
-                    printLine(console);
-                    printBack(console, "\nusing local native template...");
+                    printNewLine(console);
+                    printBack(console, "using local native template...");
                     onFileExported(console, name, true);
                 }
             }
@@ -2256,8 +2276,8 @@ static inline void exportNativeGame(Console* console, const char* name, const ch
 
     if(local && canExportNativeFromLocalTemplate(system))
     {
-        printLine(console);
-        printBack(console, "\nlocal native template failed, using server template...");
+        printNewLine(console);
+        printBack(console, "local native template failed, using server template...");
     }
 
     exportGame(console, name, system, onNativeExportGet, params);
@@ -2351,6 +2371,7 @@ static void onHtmlPageGet(const net_get_data* data)
     // the freed struct (a 404 on the page, or an offline run, is enough).
     if(data->type == net_get_error)
     {
+        printNewLine(console);
         printError(console, "file downloading error :(");
         commandDone(console);
         free(exportData->stub); // set by the stub stage; free(NULL) is fine
@@ -2696,7 +2717,7 @@ static void onExportCommand(Console* console)
             void (*handler)(Console*, const char*, const char*, ExportParams);
         } Handlers[] =
             {
-#define EXPORT_CMD_DEF(name) {#name, onExport_##name},
+#define EXPORT_CMD_DEF(name, label) {#name, onExport_##name},
                 EXPORT_CMD_LIST(EXPORT_CMD_DEF)
 #undef EXPORT_CMD_DEF
             };
@@ -2980,7 +3001,7 @@ static void onGetCommand(Console* console)
 static void tabCompleteHelp(TabCompleteData* data);
 
 static const char HelpUsage[] = "help [<text>"
-#define HELP_CMD_DEF(name) " " #name
+#define HELP_CMD_DEF(name, label) " " #name
     HELP_CMD_LIST(HELP_CMD_DEF)
 #undef HELP_CMD_DEF
         "]";
@@ -2989,11 +3010,11 @@ static const char HelpUsage[] = "help [<text>"
 // "|": the line needs somewhere to wrap, in the console and in the
 // markdown tables of the /learn page, where one long run of names used to
 // push the table past the page container.
-#define SECTION_DEF(NAME, ...) " " #NAME
-#define EXPORT_CMD_DEF(name)   #name " "
-#define EXPORT_KEYS_DEF(name)  #name "=0 "
-#define IMPORT_CMD_DEF(name)   #name " "
-#define IMPORT_KEYS_DEF(key)   #key "=0 "
+#define SECTION_DEF(NAME, ...)      " " #NAME
+#define EXPORT_CMD_DEF(name, label) #name " "
+#define EXPORT_KEYS_DEF(name)       #name "=0 "
+#define IMPORT_CMD_DEF(name)        #name " "
+#define IMPORT_KEYS_DEF(key)        #key "=0 "
 
 #if defined(CAN_ADDGET_FILE)
 // clang-format off
@@ -3264,7 +3285,7 @@ typedef struct ApiItem ApiItem;
 
 static void tabCompleteHelp(TabCompleteData* data)
 {
-#define HELP_CMD_DEF(name) addTabCompleteOption(data, #name);
+#define HELP_CMD_DEF(name, label) addTabCompleteOption(data, #name);
     HELP_CMD_LIST(HELP_CMD_DEF)
 #undef HELP_CMD_DEF
 
@@ -4110,7 +4131,7 @@ static void onHelpCommand(Console* console)
             void (*handler)(Console*);
         } Handlers[] =
             {
-#define HELP_CMD_DEF(name) {#name, onHelp_##name},
+#define HELP_CMD_DEF(name, label) {#name, onHelp_##name},
                 HELP_CMD_LIST(HELP_CMD_DEF)
 #undef HELP_CMD_DEF
             };
@@ -4807,6 +4828,7 @@ Console* console_create(const ConsoleDeps* deps)
     console->cursor.pos = (tic_point){1, 3};
     console->input.text = console->text;
     console->active = !console->boot;
+    console->progressLine = -1;
 
     // parse --cmd param
     {
@@ -4861,6 +4883,10 @@ void console_free(Console* console)
         free(console->history.items);
     }
 
+    for(s32 i = 0; i < console->commands.ownedCount; i++)
+        free(console->commands.owned[i]);
+
+    FREE(console->commands.owned);
     FREE(console->commands.items);
     free(console->desc);
     free(console);
@@ -4919,6 +4945,47 @@ bool console_replay(Console* console)
     }
 
     return false;
+}
+
+void console_exec(Console* console, const char* command)
+{
+    size_t length = strlen(command);
+
+    if(length >= TICNAME_MAX)
+        length = TICNAME_MAX - 1;
+
+    char* copy = malloc(length + 1);
+
+    if(!copy)
+        return;
+
+    memcpy(copy, command, length);
+    copy[length] = '\0';
+
+    char** items = realloc(console->commands.items,
+                           sizeof(char*) * (console->commands.count + 1));
+    char** owned = realloc(console->commands.owned,
+                           sizeof(char*) * (console->commands.ownedCount + 1));
+
+    if(!items || !owned)
+    {
+        free(copy);
+
+        if(items)
+            console->commands.items = items;
+
+        if(owned)
+            console->commands.owned = owned;
+
+        return;
+    }
+
+    console->commands.items = items;
+    console->commands.owned = owned;
+
+    console->commands.items[console->commands.count++] = copy;
+    console->commands.owned[console->commands.ownedCount++] = copy;
+    console->active = true;
 }
 
 void console_trace(Console* console, const char* text, u8 color)

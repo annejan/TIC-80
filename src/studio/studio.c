@@ -28,9 +28,12 @@
 #include "keyboard.h"
 #include "ui.h"
 
-// The strip is drawn by the editors' screens alone, so its header comes with them.
+// The bar is drawn by the editors' screens alone, so its header comes with them.
 #if defined(BUILD_EDITORS)
-#include "toolbar.h"
+#include "menubar.h"
+#include "studiomenu.h"
+
+static void drawStudioMenubar(Studio* studio);
 #endif
 
 #if defined(_WIN32)
@@ -122,14 +125,14 @@ typedef struct
 } CartHash;
 
 // The editors in tab order, expanded into the mode list and the registry
-// entries, so the tabs, the function keys and the number shortcuts agree.
+// entries, so the app switcher, the function keys and the number shortcuts agree.
 // clang-format off
 #define EDITOR_APPS(APP)                                                                                            \
-    APP(TIC_CODE_MODE,   "CODE EDITOR",   "CODE EDITOR [f1]",   tic_icon_code,   tic_key_f1, codeApp,   codeTick,   NULL,           &CodeClipboard,   codeBand,   false)   \
-    APP(TIC_SPRITE_MODE, "SPRITE EDITOR", "SPRITE EDITOR [f2]", tic_icon_sprite, tic_key_f2, spriteApp, spriteTick, spriteScanline, &SpriteClipboard, spriteBand, true) \
-    APP(TIC_MAP_MODE,    "MAP EDITOR",    "MAP EDITOR [f3]",    tic_icon_map,    tic_key_f3, mapApp,    mapTick,    mapScanline,    &MapClipboard,    mapBand,    true)    \
-    APP(TIC_SFX_MODE,    "SFX EDITOR",    "SFX EDITOR [f4]",    tic_icon_sfx,    tic_key_f4, sfxApp,    sfxTick,    NULL,           &SfxClipboard,    NULL,       false)    \
-    APP(TIC_MUSIC_MODE,  "MUSIC EDITOR",  "MUSIC EDITOR [f5]",  tic_icon_music,  tic_key_f5, musicApp,  musicTick,  NULL,           &MusicClipboard,  musicBand,  false)
+    APP(TIC_CODE_MODE,   "CODE EDITOR",   tic_icon_code,   tic_key_f1, codeApp,   codeTick,   NULL,           &CodeClipboard,   false)   \
+    APP(TIC_SPRITE_MODE, "SPRITE EDITOR", tic_icon_sprite, tic_key_f2, spriteApp, spriteTick, spriteScanline, &SpriteClipboard, true) \
+    APP(TIC_MAP_MODE,    "MAP EDITOR",    tic_icon_map,    tic_key_f3, mapApp,    mapTick,    mapScanline,    &MapClipboard,    true)    \
+    APP(TIC_SFX_MODE,    "SFX EDITOR",    tic_icon_sfx,    tic_key_f4, sfxApp,    sfxTick,    NULL,           &SfxClipboard,    false)    \
+    APP(TIC_MUSIC_MODE,  "MUSIC EDITOR",  tic_icon_music,  tic_key_f5, musicApp,  musicTick,  NULL,           &MusicClipboard,  false)
 // clang-format on
 
 #if defined(BUILD_EDITORS)
@@ -169,6 +172,9 @@ struct Studio
     // builds start their cart without runGame ever being called.
     bool playerRun;
     EditorMode runFrom;
+    // A run left for a menu, console or editor is paused and can be resumed;
+    // a new run or a loaded cart clears it.
+    bool paused;
     // Whether the menu was opened over that run (ESC in a game) rather than in
     // the studio (the `menu` command): only the first one has a game to go
     // back to.
@@ -195,8 +201,8 @@ struct Studio
 #endif
     } mouse;
 
-    // Written by the editors, cleared by toolbar_step, drawn by the strip — so
-    // the buffer is not the editors' to guard.
+    // Written by the editors; the bar and the panels draw it. The buffer is not
+    // the editors' to guard.
     struct
     {
         char text[STUDIO_TEXT_BUFFER_WIDTH];
@@ -214,7 +220,6 @@ struct Studio
 #if defined(BUILD_EDITORS)
     struct
     {
-        bool show;
         bool chained;
 
         union
@@ -309,7 +314,7 @@ struct Studio
     tic_font systemFont;
 
 #if defined(BUILD_EDITORS)
-    Toolbar toolbar;
+    Menubar menubar;
 #endif
     Boot boot;
 };
@@ -462,10 +467,10 @@ static const EditorApp Apps[TIC_MODES_COUNT] =
 // The parameters are capitalised: lowercase ones would be substituted inside
 // the `.name =` designators, which is not what an initialiser means.
 // clang-format off
-#define APP_ENTRY(MODE, NAME, TIP, ICON, KEY, INST, TICK, SCAN, CLIP, BAND, VB1)                 \
-    [MODE] = {.name = NAME, .tip = TIP, .icon = ICON, .hotkey = KEY,                   \
+#define APP_ENTRY(MODE, NAME, ICON, KEY, INST, TICK, SCAN, CLIP, VB1)                   \
+    [MODE] = {.name = NAME, .icon = ICON, .hotkey = KEY,                               \
               .instance = INST, .tick = TICK, .scanline = SCAN, .clipboard = CLIP,    \
-              .band = BAND, .vbank1 = VB1},
+              .vbank1 = VB1},
         // clang-format on
         EDITOR_APPS(APP_ENTRY)
 #undef APP_ENTRY
@@ -474,6 +479,33 @@ static const EditorApp Apps[TIC_MODES_COUNT] =
             [TIC_SURF_MODE] = {.instance = surfApp, .tick = surfTick, .scanline = surfScanline},
 #endif
 };
+
+#if defined(BUILD_EDITORS)
+void* studiomenu_editor(Studio* studio, EditorMode mode)
+{
+    return Apps[mode].instance ? Apps[mode].instance(studio) : NULL;
+}
+
+s32 studiomenu_editor_bank(Studio* studio, EditorMode mode)
+{
+    switch(mode)
+    {
+        case TIC_SPRITE_MODE: return studio->bank.index.sprites;
+        case TIC_MAP_MODE: return studio->bank.index.map;
+        case TIC_MUSIC_MODE: return studio->bank.index.music;
+        case TIC_SFX_MODE: return studio->bank.index.sfx;
+        default: break;
+    }
+
+    return 0;
+}
+
+void studiomenu_command(Studio* studio, const char* command)
+{
+    console_exec(studio->console, command);
+    studio->menubar.requested = TIC_CONSOLE_MODE;
+}
+#endif
 
 #if defined(BUILD_EDITORS)
 static void emptyDone(void* data)
@@ -653,12 +685,36 @@ void sfx_stop(tic_mem* tic, s32 channel)
 
 char getKeyboardText(Studio* studio)
 {
+#if defined(BUILD_EDITORS)
+    // The bar owns the frame's keys: nothing typed reaches the editor. The
+    // character stays unread, and the system layer drops it with the frame.
+    if(studio->menubar.captured)
+        return '\0';
+#endif
+
     return keyboard_text(studio->tic);
 }
 
 bool keyWasPressed(Studio* studio, tic_key key)
 {
+#if defined(BUILD_EDITORS)
+    // The menu closed on ESC this frame; the editor must not see the same key.
+    if(key == tic_key_escape && studio->menubar.escaped)
+        return false;
+#endif
+
     return keyboard_pressed(studio->tic, key);
+}
+
+bool keyWasPressedOnce(Studio* studio, tic_key key)
+{
+#if defined(BUILD_EDITORS)
+    // The menu closed on ESC this frame; the editor must not see the same key.
+    if(key == tic_key_escape && studio->menubar.escaped)
+        return false;
+#endif
+
+    return keyboard_pressed_once(studio->tic, key);
 }
 
 bool enterWasPressed(Studio* studio)
@@ -720,20 +776,6 @@ static void md5(const void* voidData, s32 length, u8 digest[MD5_HASHSIZE])
     }
 
     MD5_Final(digest, &c);
-}
-
-const char* md5str(const void* data, s32 length)
-{
-    static char res[MD5_HASHSIZE * 2 + 1];
-
-    u8 digest[MD5_HASHSIZE];
-
-    md5(data, length, digest);
-
-    for(s32 n = 0; n < MD5_HASHSIZE; ++n)
-        snprintf(res + n * 2, sizeof("ff"), "%02x", digest[n]);
-
-    return res;
 }
 
 #if defined(BUILD_EDITORS)
@@ -799,110 +841,6 @@ void showTooltip(Studio* studio, const char* text)
              (s32)sizeof studio->tooltip.text - 1, text);
 }
 
-#if defined(TIC80_PRO) && defined(BUILD_EDITORS)
-static void drawBankIcon(Studio* studio, s32 x, s32 y)
-{
-    tic_mem* tic = studio->tic;
-
-    tic_rect rect = {x, y, TIC_FONT_WIDTH, TIC_FONT_HEIGHT};
-
-    bool over = false;
-    EditorMode mode = 0;
-
-    for(s32 i = 0; i < COUNT_OF(BankModes); i++)
-        if(BankModes[i] == studio->mode)
-        {
-            mode = i;
-            break;
-        }
-
-    if(checkMousePos(studio, &rect))
-    {
-        setCursor(studio, tic_cursor_hand);
-
-        over = true;
-
-        showTooltip(studio, "SWITCH BANK");
-
-        if(checkMouseClick(studio, &rect, tic_mouse_left))
-            studio->bank.show = !studio->bank.show;
-    }
-
-    if(studio->bank.show)
-    {
-        drawBitIcon(studio, tic_icon_bank, x, y, tic_color_red);
-
-        enum
-        {
-            Size = TOOLBAR_SIZE
-        };
-
-        for(s32 i = 0; i < TIC_EDITOR_BANKS; i++)
-        {
-            tic_rect btnRect = {x + 2 + (i + 1) * Size, 0, Size, Size};
-
-            bool hover = false;
-            if(checkMousePos(studio, &btnRect))
-            {
-                setCursor(studio, tic_cursor_hand);
-                hover = true;
-
-                if(checkMouseClick(studio, &btnRect, tic_mouse_left))
-                {
-                    if(studio->bank.chained)
-                        memset(studio->bank.indexes, i, sizeof studio->bank.indexes);
-                    else
-                        studio->bank.indexes[mode] = (s8)i;
-                }
-            }
-
-            if(i == studio->bank.indexes[mode])
-                tic_api_rect(tic, btnRect.x, btnRect.y, btnRect.w, btnRect.h, tic_color_red);
-
-            tic_api_print(tic, (char[]){(char)('0' + i), '\0'}, btnRect.x + 1, btnRect.y + 1,
-                          i == studio->bank.indexes[mode]
-                              ? tic_color_white
-                          : hover
-                              ? tic_color_red
-                              : tic_color_light_grey,
-                          false, 1, false);
-        }
-
-        {
-            tic_rect btnRect = {x + 4 + (TIC_EDITOR_BANKS + 1) * Size, 0, Size, Size};
-
-            bool hover = false;
-
-            if(checkMousePos(studio, &btnRect))
-            {
-                setCursor(studio, tic_cursor_hand);
-
-                hover = true;
-
-                if(checkMouseClick(studio, &btnRect, tic_mouse_left))
-                {
-                    studio->bank.chained = !studio->bank.chained;
-
-                    if(studio->bank.chained)
-                        memset(studio->bank.indexes, studio->bank.indexes[mode], sizeof studio->bank.indexes);
-                }
-            }
-
-            drawBitIcon(studio, tic_icon_pin, btnRect.x, btnRect.y, studio->bank.chained ? tic_color_red : hover ? tic_color_grey
-                                                                                                                 : tic_color_light_grey);
-        }
-    }
-    else
-    {
-        drawBitIcon(studio, tic_icon_bank, x, y, over ? tic_color_red : tic_color_light_grey);
-    }
-}
-#endif
-
-struct Sprite* getSpriteEditor(Studio* studio)
-{
-    return studio->banks.sprite[studio->bank.index.sprites];
-}
 #endif
 
 static inline s32 lerp(s32 a, s32 b, float d)
@@ -1119,7 +1057,7 @@ Boot* getBoot(Studio* studio)
 
 #if defined(BUILD_EDITORS)
 
-// The popup unrolls by its own height; it was never TOOLBAR_SIZE, the two
+// The popup unrolls by its own height; it was never STUDIO_BAR_HEIGHT, the two
 // just happen to be 7.
 #define POPUP_HEIGHT (TIC_FONT_HEIGHT + 1)
 
@@ -1163,38 +1101,6 @@ static bool isBanked(EditorMode mode)
     return false;
 }
 #endif
-
-// The strip's whole frame: background, the mode's own widgets, then the studio
-// chrome. A mode that is not an editor has no strip at all.
-static void drawToolbar(Studio* studio)
-{
-    Toolbar* tb = &studio->toolbar;
-
-    // Read live: an editor may have switched the mode earlier in this same tick.
-    EditorMode mode = tb->mode = studio->mode;
-    const EditorApp* app = &Apps[mode];
-
-    if(!app->name)
-        return;
-
-    tb->app = app->instance(studio);
-    tb->hideName = false;
-
-    toolbar_begin(tb, true);
-
-#if defined(TIC80_PRO) && defined(BUILD_EDITORS)
-    if(isBanked(mode))
-    {
-        drawBankIcon(studio, COUNT_OF(Modes) * TOOLBAR_SIZE + 2, 0);
-        tb->hideName = studio->bank.show;
-    }
-#endif
-
-    if(app->band)
-        app->band(tb->app, tb);
-
-    toolbar_end(tb);
-}
 
 ClipboardEvent getClipboardEvent(Studio* studio)
 {
@@ -1251,6 +1157,8 @@ void drawBitIcon(Studio* studio, s32 id, s32 x, s32 y, u8 color)
 
 static void initRunMode(Studio* studio)
 {
+    studio->paused = false;
+
     initRun(studio->run,
 #if defined(BUILD_EDITORS)
             studio->console,
@@ -1306,6 +1214,17 @@ bool studio_is_cart_loaded(Studio* studio)
     return strlen(studio->rom.name) > 0 || studio->boot.cart;
 }
 
+s32 getStudioEditorTop(Studio* studio)
+{
+#if defined(BUILD_EDITORS)
+    // With autohide the editors fill the screen and the bar overlays them.
+    return studio->menubar.autohide ? 0 : STUDIO_BAR_HEIGHT;
+#else
+    (void)studio;
+    return STUDIO_BAR_HEIGHT;
+#endif
+}
+
 void setStudioMode(Studio* studio, EditorMode mode)
 {
     if(mode != studio->mode)
@@ -1313,7 +1232,10 @@ void setStudioMode(Studio* studio, EditorMode mode)
         EditorMode prev = studio->mode;
 
         if(prev == TIC_RUN_MODE)
+        {
             tic_core_pause(studio->tic);
+            studio->paused = true;
+        }
 
         if(mode != TIC_RUN_MODE)
             tic_api_reset(studio->tic);
@@ -1376,6 +1298,9 @@ void setStudioMode(Studio* studio, EditorMode mode)
     {
         Music* music = studio->banks.music[studio->bank.index.music];
         music->tab = (music->tab + 1) % MUSIC_TAB_COUNT;
+
+        studio->config->data.options.musicTracker = music->tab == MUSIC_TRACKER_TAB;
+        studio->config->saveOptions(studio->config);
     }
 #endif
 
@@ -1403,9 +1328,19 @@ static void changeStudioMode(Studio* studio, s32 dir)
 }
 #endif
 
+bool studio_run_paused(Studio* studio)
+{
+    return studio->paused;
+}
+
 void resumeGame(Studio* studio)
 {
+    if(!studio->paused)
+        return;
+
     tic_core_resume(studio->tic);
+    studio->run->exit = false;
+    studio->paused = false;
     studio->mode = TIC_RUN_MODE;
 }
 
@@ -1429,6 +1364,12 @@ bool checkStudioViMode(Studio* studio, ViMode mode)
 
 bool checkMousePos(Studio* studio, const tic_rect* rect)
 {
+#if defined(BUILD_EDITORS)
+    // The menu owns the pointer: the editor must not draw hover under it.
+    if(menubar_owns_pointer(&studio->menubar, studio->tic))
+        return false;
+#endif
+
     return mouse_over(studio->tic, rect);
 }
 
@@ -1583,6 +1524,8 @@ void studioRomSaved(Studio* studio)
 
 void studioRomLoaded(Studio* studio)
 {
+    studio->paused = false;
+
     initModules(studio);
 
     updateTitle(studio);
@@ -1889,7 +1832,7 @@ static void stopVideoRecord(Studio* studio)
     studio->video.record = false;
 }
 
-static void startVideoRecord(Studio* studio)
+void startVideoRecord(Studio* studio)
 {
     if(studio->video.record)
     {
@@ -1905,17 +1848,89 @@ static void startVideoRecord(Studio* studio)
     }
 }
 
-static void takeScreenshot(Studio* studio)
+void takeScreenshot(Studio* studio)
 {
     startVideoRecord(studio);
     studio->video.screenshot = true;
 }
 #endif
 
-static void gotoFullscreen(Studio* studio)
+void gotoFullscreen(Studio* studio)
 {
     tic_sys_fullscreen_set(studio->config->data.options.fullscreen = !tic_sys_fullscreen_get());
 }
+
+#if defined(BUILD_EDITORS)
+void studioCodeViewToggle(Studio* studio, CodeViewOption option)
+{
+    Code* code = studio->code;
+    struct StudioOptions* options = &studio->config->data.options;
+
+    switch(option)
+    {
+        case CodeViewFont:
+            code->altFont = !code->altFont;
+            options->codeAltFont = code->altFont;
+            break;
+
+        case CodeViewShadow:
+            code->shadowText = !code->shadowText;
+            options->codeShadow = code->shadowText;
+            break;
+
+        case CodeViewLineNumbers:
+            // LINES with the sidebar hidden brings the sidebar back with them on
+            if(code->showGutter)
+                code->lineNumbers = !code->lineNumbers;
+            else
+                code->showGutter = code->lineNumbers = true;
+
+            options->codeLineNumbers = code->lineNumbers;
+            options->codeSidebar = code->showGutter;
+            code->update(code);
+            break;
+
+        case CodeViewSidebar:
+            // the line numbers setting is kept, so it returns with the sidebar
+            code->showGutter = !code->showGutter;
+
+            options->codeSidebar = code->showGutter;
+            options->codeLineNumbers = code->lineNumbers;
+            code->update(code);
+            break;
+
+        case CodeViewStatusbar:
+            code->showStatusbar = !code->showStatusbar;
+            options->codeStatusbar = code->showStatusbar;
+            code->update(code);
+            break;
+    }
+
+    studio->config->saveOptions(studio->config);
+}
+
+static void updateMenubar(Studio* studio)
+{
+    EditorMode mode = getStudioMode(studio);
+    const EditorApp* app = &Apps[mode];
+
+    studiomenu_sync(studio, &studio->menubar, mode, app);
+
+    void* instance = app->instance ? app->instance(studio) : NULL;
+    studiomenu_sync_editor(studio, &studio->menubar, mode, instance);
+}
+
+static void drawStudioMenubar(Studio* studio)
+{
+    if(!Apps[studio->mode].name)
+        return;
+
+    updateMenubar(studio);
+    studio->menubar.tooltip = studio->tooltip.text[0] ? studio->tooltip.text : NULL;
+    menubar_draw(&studio->menubar, studio->tic, studio->mode,
+                 &getConfig(studio)->cart->bank0.tiles);
+}
+#endif
 
 #if defined(CRT_SHADER_SUPPORT)
 static void switchCrtMonitor(Studio* studio)
@@ -1956,6 +1971,48 @@ static void switchBank(Studio* studio, s32 bank)
         }
 }
 
+void studiomenu_bank_switch(Studio* studio, s32 bank)
+{
+    switchBank(studio, bank);
+}
+
+void studiomenu_bank_chain(Studio* studio)
+{
+    studio->bank.chained = !studio->bank.chained;
+
+    if(studio->bank.chained)
+    {
+        s32 banked = 0;
+
+        for(s32 i = 0; i < COUNT_OF(BankModes); i++)
+            if(BankModes[i] == studio->mode)
+            {
+                banked = i;
+                break;
+            }
+
+        memset(studio->bank.indexes, studio->bank.indexes[banked], sizeof studio->bank.indexes);
+    }
+}
+
+bool studiomenu_bank_state(Studio* studio, s32* index, bool* chained, bool* banked)
+{
+    EditorMode mode = getStudioMode(studio);
+
+    *index = 0;
+    *chained = studio->bank.chained;
+    *banked = isBanked(mode);
+
+    for(s32 i = 0; i < COUNT_OF(BankModes); i++)
+        if(BankModes[i] == mode)
+        {
+            *index = studio->bank.indexes[i];
+            break;
+        }
+
+    return *banked;
+}
+
 #endif
 
 void gotoMenu(Studio* studio)
@@ -1977,7 +2034,7 @@ void gotoMenu(Studio* studio)
 // leave for the studio — the same step ESC takes in RUN mode (#2937).
 bool studio_menu_over_player_run(Studio* studio)
 {
-    return studio->playerRun && studio->menuOverRun;
+    return studio->playerRun && studio->menuOverRun && studio->paused;
 }
 
 // ESC in a dev run, and the back of the pause menu over one: the run was asked
@@ -1988,7 +2045,7 @@ void leaveRun(Studio* studio)
     setStudioMode(studio, studio->runFrom);
 }
 
-static bool enterWasPressedOnce(Studio* studio)
+bool enterWasPressedOnce(Studio* studio)
 {
     return keyboard_pressed_once(studio->tic, tic_key_return) ||
            keyboard_pressed_once(studio->tic, tic_key_numpadenter);
@@ -2038,6 +2095,14 @@ static void processShortcuts(Studio* studio)
 #endif
 
     if(studio_mainmenu_keyboard(studio->mainmenu)) return;
+
+#if defined(BUILD_EDITORS)
+    // ESC was the menu's this frame: it closed it and goes no further. The
+    // flag stays set until the next menubar_step, so keyWasPressed() hides the
+    // key from the editor's tick too.
+    if(studio->menubar.escaped)
+        return;
+#endif
 
     bool alt = tic_api_key(tic, tic_key_alt);
     bool ctrl = tic_api_key(tic, tic_key_ctrl);
@@ -2092,6 +2157,8 @@ static void processShortcuts(Studio* studio)
             runGame(studio, RUN_FROM_STUDIO);
         else if(keyboard_pressed_once(studio->tic, tic_key_s))
             saveProject(studio);
+        else if(keyboard_pressed_once(studio->tic, tic_key_f10))
+            hideBattleTime(studio);
 #endif
 
 #if defined(TIC80_PRO) && defined(BUILD_EDITORS)
@@ -2152,8 +2219,6 @@ static void processShortcuts(Studio* studio)
             takeScreenshot(studio);
         else if(keyboard_pressed_once(studio->tic, tic_key_f9))
             startVideoRecord(studio);
-        else if(keyboard_pressed_once(studio->tic, tic_key_f10))
-            hideBattleTime(studio);
         else if(keyboard_pressed_once(studio->tic, tic_key_f12))
             startBattle(studio);
         else if(studio->mode == TIC_RUN_MODE && keyboard_pressed_once(studio->tic, tic_key_f7))
@@ -2356,6 +2421,17 @@ static void renderStudio(Studio* studio)
     // tamper with the keyboard input.
     processShortcuts(studio);
 
+#if defined(BUILD_EDITORS)
+    // The bar owns the frame's keys: keep them from the editor's tick. This
+    // runs after tick_start's snapshot and the global shortcuts, so `now`
+    // keeps the real keys and the menu's repeats stay correct. Ctrl and Alt
+    // combinations type nothing and carry the accelerators the menu shows, so
+    // they pass; getKeyboardText() holds back typed text on its own.
+    if(studio->menubar.captured && !tic_api_key(tic, tic_key_ctrl) &&
+       !tic_api_key(tic, tic_key_alt))
+        tic->ram->input.keyboard.data = 0;
+#endif
+
     // clear screen for all the modes except the Run mode
     if(studio->mode != TIC_RUN_MODE)
     {
@@ -2378,10 +2454,42 @@ static void renderStudio(Studio* studio)
             };
 #endif
 
+#if defined(BUILD_EDITORS)
+        // The menu is modal: its presses and clicks must not reach the editor.
+        MouseState* menuMouse = studio->mouse.state;
+        bool menuMasked[COUNT_OF(studio->mouse.state)];
+        bool menuOpen = studio->menubar.open >= 0;
+
+        for(s32 i = 0; i < COUNT_OF(studio->mouse.state); i++)
+        {
+            // With autohide the editor fills the screen under the bar, so a
+            // press that starts in the top strip belongs to the menu.
+            bool owner = menuOpen ||
+                         (studio->menubar.autohide && (menuMouse[i].down || menuMouse[i].click) &&
+                          menuMouse[i].start.y < MENUBAR_HEIGHT);
+
+            menuMasked[i] = owner && menuMouse[i].down;
+
+            if(menuMasked[i])
+                menuMouse[i].down = false;
+
+            if(owner)
+            {
+                menuMouse[i].click = false;
+                menuMouse[i].dbl.click = false;
+            }
+        }
+
+#endif
+
         if(app->tick)
             app->tick(app->instance(studio));
 
 #if defined(BUILD_EDITORS)
+        for(s32 i = 0; i < COUNT_OF(studio->mouse.state); i++)
+            if(menuMasked[i])
+                menuMouse[i].down = true;
+
         serveConsole(studio);
 #endif
 
@@ -2398,20 +2506,22 @@ static void renderStudio(Studio* studio)
                 setStudioMode(studio, TIC_HOME_MODE);
         }
 
-        // Any editor mode gets the strip; `band` NULL still draws the rail.
-        // An overlay-bank mode drew its strip there too — see D2.
+        // The bar follows the live mode: the editor's tick may have switched
+        // it, and a mode with no name gets no bar.
 #if defined(BUILD_EDITORS)
-        if(app->name)
+        const EditorApp* barApp = &Apps[studio->mode];
+
+        if(barApp->name)
         {
-            if(app->vbank1)
+            if(barApp->vbank1)
             {
                 VBANK(tic, 1)
                 {
-                    drawToolbar(studio);
+                    drawStudioMenubar(studio);
                 }
             }
             else
-                drawToolbar(studio);
+                drawStudioMenubar(studio);
         }
 #else
         TIC_UNUSED(app);
@@ -2708,24 +2818,60 @@ void studio_tick(Studio* studio, tic80_input input)
     tic_net_start(studio->net);
 #endif
 
-    // A tab click lands here rather than switching mid-frame: the mode's blit
+    // A menu item lands here rather than switching mid-frame: the mode's blit
     // callback is chosen after its tick, so the switch has to wait for that.
 #if defined(BUILD_EDITORS)
-    if(studio->toolbar.requested)
+    bool menubarSwitched = studio->menubar.requested != MENUBAR_NO_MODE;
+
+    if(menubarSwitched)
     {
-        setStudioMode(studio, studio->toolbar.requested);
-        studio->toolbar.requested = 0;
+        EditorMode mode = studio->menubar.requested;
+
+        studio->menubar.requested = MENUBAR_NO_MODE;
+
+        if(mode == TIC_MENU_MODE)
+            gotoMenu(studio);
+#if defined(BUILD_SURF)
+        else if(mode == TIC_SURF_MODE)
+            gotoSurf(studio);
+#endif
+        else
+            setStudioMode(studio, mode);
     }
 #endif
 
     // After processMouseStates so a press is seen the frame it arrives, and
-    // before renderStudio, which is where the tooltip's clear belongs.
+    // before renderStudio. The menu takes the pointer here too, before the
+    // editor under its popup sees it.
     processMouseStates(studio);
+
+    // The editors write it as they draw; the bar shows what this frame set.
+    studio->tooltip.text[0] = '\0';
 #if defined(BUILD_EDITORS)
-    toolbar_step(&studio->toolbar);
+    if(Apps[studio->mode].name)
+    {
+        updateMenubar(studio);
+        menubar_step(&studio->menubar, studio->tic, (s32)studio->mode);
+    }
+    else
+        menubar_step(&studio->menubar, studio->tic, MENUBAR_NO_MODE);
+
+    // The item ran last frame; the key that ran it is still the bar's, not the
+    // editor it just opened. A mode change resets the core's key history, so
+    // a still-held Enter would read there as a new press. Text is muted for
+    // the console too, which reads the system queue directly.
+    if(menubarSwitched)
+    {
+        studio->menubar.captured = true;
+        keyboard_mute_text(true);
+    }
 #endif
 
     renderStudio(studio);
+
+#if defined(BUILD_EDITORS)
+    keyboard_mute_text(false);
+#endif
 
     {
         const EditorApp* app = &Apps[studio->mode];
@@ -3198,14 +3344,22 @@ Studio* studio_create(s32 argc, char** argv, s32 samplerate, tic80_pixel_color_f
     initConfig(studio->config, studio, studio->fs);
 
 #if defined(BUILD_EDITORS)
-    studio->toolbar = (Toolbar){
-        .tic = studio->tic,
-        .config = getConfig(studio),
-        .mouse = studio->mouse.state,
-        .tooltip = studio->tooltip.text,
-        .apps = Apps,
-        .appCount = TIC_MODES_COUNT,
-    };
+    void* menuData = studiomenu_init(studio, &studio->menubar, Modes, COUNT_OF(Modes), Apps);
+
+    s32 categoriesCount = 0;
+    MenuBarCategory* categories = studiomenu_categories(&categoriesCount);
+
+    menubar_init(&studio->menubar, categories, categoriesCount,
+                 studio->mouse.state, menuData, tic_icon_circle);
+
+    // F10 opens the TIC-80 menu: the last category is the host's home.
+    studio->menubar.home = categoriesCount - 1;
+    // The overflow menu sits before the bank and TIC-80; the module knows where.
+    studio->menubar.more = studiomenu_more();
+    studio->menubar.autohide = studio->config->data.options.autohide;
+    studio->menubar.compact = studio->config->data.options.compactBar;
+    studio->menubar.tabs = &categories[0];
+    studio->menubar.tabIcon = tic_icon_tab;
 #endif
 
     if(studio->config->data.uiScale > maxscale)

@@ -34,6 +34,55 @@ typedef struct Console Console;
 typedef struct CommandDesc CommandDesc;
 typedef struct ConsoleAnswer ConsoleAnswer;
 
+// The console's vocabularies. Dispatch, tab completion and the usage strings
+// are generated from these, and the studio menu reads them for Help and Export;
+// the label is only for the menu.
+// clang-format off
+#define HELP_CMD_LIST(macro)    \
+    macro(version, "VERSION")   \
+    macro(welcome, "WELCOME")   \
+    macro(spec, "SPEC")         \
+    macro(ram, "RAM")           \
+    macro(vram, "VRAM")         \
+    macro(commands, "COMMANDS") \
+    macro(api, "API")           \
+    macro(keys, "KEYS")         \
+    macro(buttons, "BUTTONS")   \
+    macro(startup, "STARTUP")   \
+    macro(hotkeys, "HOTKEYS")   \
+    macro(terms, "TERMS")       \
+    macro(license, "LICENSE")
+// clang-format on
+
+// clang-format off
+#define EXPORT_GAME_LIST(macro)     \
+    macro(win, "WIN")               \
+    macro(linux, "LINUX")           \
+    macro(linuxarm, "LINUX ARM")    \
+    macro(mac, "MACOS")             \
+    macro(macintel, "MAC INTEL")    \
+    macro(html, "HTML")
+// clang-format on
+
+// clang-format off
+#define EXPORT_ASSET_LIST(macro)    \
+    macro(tiles, "TILES")           \
+    macro(sprites, "SPRITES")       \
+    macro(mapimg, "MAP")            \
+    macro(screen, "SCREEN")         \
+    macro(sfx, "SFX")               \
+    macro(music, "MUSIC")           \
+    macro(help, "HELP")
+// clang-format on
+
+// clang-format off
+#define EXPORT_CMD_LIST(macro)  \
+    EXPORT_GAME_LIST(macro)     \
+    macro(binary, "BINARY")     \
+    macro(map, "MAP DATA")      \
+    EXPORT_ASSET_LIST(macro)
+// clang-format on
+
 // What the console is given: the machine it draws on and reads its keys from,
 // the filesystem it loads carts with, the network it checks, the config values
 // it reads, the pointer states the host ticks, and how the launch went.
@@ -195,6 +244,7 @@ struct Console
     char* text;
     u8* color;
     char exportName[TICNAME_MAX]; // the export's file, until it is answered
+    s32 progressLine;             // the export's GET row, -1 before the first report
 
     struct
     {
@@ -219,6 +269,8 @@ struct Console
         s32 count;
         s32 current;
         char** items;
+        char** owned; // the menu's commands, freed with the console
+        s32 ownedCount;
     } commands;
 
     CommandDesc* desc;
@@ -239,6 +291,10 @@ void console_error(Console* console, const char* info);
 // launch keeps its commands and they have all run, they are rewound and this
 // says so, and the host shows the console again.
 bool console_replay(Console* console);
+
+// Queues a command for a menu item that speaks the console's language instead
+// of carrying its own copy of the work.
+void console_exec(Console* console, const char* command);
 
 // Takes what the console wants served, if anything: the host takes it once,
 // does it, and answers through console_answer() — at once for a move, when the

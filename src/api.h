@@ -315,6 +315,18 @@ enum
         tic_mem*, s32 id, s32 hold, s32 period)                                                                         \
                                                                                                                         \
                                                                                                                         \
+    macro(btnr,                                                                                                         \
+        "btnr(id) -> released",                                                                                         \
+                                                                                                                        \
+        "This function allows you to read the status of one of TIC's buttons.\n"                                        \
+        "It returns true only if the key has been released since the last frame.\n",                                    \
+        1,                                                                                                              \
+        1,                                                                                                              \
+        0,                                                                                                              \
+        u32,                                                                                                            \
+        tic_mem*, s32 id)                                                                                               \
+                                                                                                                        \
+                                                                                                                        \
     macro(sfx,                                                                                                          \
         "sfx(id note=-1 duration=-1 channel=0 volume=15 speed=0)",                                                      \
                                                                                                                         \
@@ -736,7 +748,7 @@ enum
         "Things drawn outside of this area will not be visible.\n"                                                      \
         "Calling clip() with no parameters will reset the drawing area to the entire screen.",                          \
         4,                                                                                                              \
-        4,                                                                                                              \
+        0,                                                                                                              \
         0,                                                                                                              \
         void,                                                                                                           \
         tic_mem*, s32 x, s32 y, s32 width, s32 height)                                                                  \
@@ -815,6 +827,17 @@ enum
         0,                                                                                                              \
         bool,                                                                                                           \
         tic_mem*, tic_key key, s32 hold, s32 period)                                                                    \
+                                                                                                                        \
+                                                                                                                        \
+    macro(keyr,                                                                                                         \
+        "keyr(code=-1) -> released",                                                                                    \
+                                                                                                                        \
+        "This function returns true if the given key isn't pressed but was pressed in the previous frame.\n",           \
+        1,                                                                                                              \
+        0,                                                                                                              \
+        0,                                                                                                              \
+        bool,                                                                                                           \
+        tic_mem*, tic_key key)                                                                                          \
                                                                                                                         \
                                                                                                                         \
     macro(fget,                                                                                                         \

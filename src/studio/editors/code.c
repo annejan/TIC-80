@@ -30,15 +30,26 @@
 
 #define TEXT_CURSOR_DELAY        (TIC80_FRAMERATE / 2)
 #define TEXT_CURSOR_BLINK_PERIOD TIC80_FRAMERATE
-#define MAX_LINE_NUMBER_DIGITS   5
 #define MIN_GUTTER_WIDTH         7
-#define MAX_GUTTER_WIDTH         (TIC_ALTFONT_WIDTH * MAX_LINE_NUMBER_DIGITS + 1)
-#define CODE_EDITOR_HEIGHT       (TIC80_HEIGHT - TOOLBAR_SIZE - STUDIO_TEXT_HEIGHT)
-#define TEXT_BUFFER_HEIGHT       (CODE_EDITOR_HEIGHT / STUDIO_TEXT_HEIGHT)
-#define SIDEBAR_WIDTH            (12 * TIC_FONT_WIDTH)
+
+// The right outline panel keeps its height when the status bar is hidden.
+#define OUTLINE_HEIGHT (TIC80_HEIGHT - STUDIO_BAR_HEIGHT - STUDIO_TEXT_HEIGHT)
+#define OUTLINE_ROWS   (OUTLINE_HEIGHT / STUDIO_TEXT_HEIGHT)
+
+static s32 getCodeHeight(const Code* code)
+{
+    return TIC80_HEIGHT - getStudioEditorTop(code->studio) - (code->showStatusbar ? STUDIO_TEXT_HEIGHT : 0);
+}
+
+static s32 getCodeTextHeight(const Code* code)
+{
+    return getCodeHeight(code) / STUDIO_TEXT_HEIGHT;
+}
+#define SIDEBAR_WIDTH (12 * TIC_FONT_WIDTH)
 
 #if defined(TIC80_PRO)
-#define MAX_CODE sizeof(tic_code)
+// The terminator needs a byte of the same array.
+#define MAX_CODE (sizeof(tic_code) - 1)
 #else
 #define MAX_CODE TIC_BANK_SIZE
 #endif
@@ -92,12 +103,10 @@ static void unpackState(Code* code, bool pos_undo)
 
     if(first_change != NULL)
     {
-
-        //we actually will want to go the one before the first change, as if
-        //we were about to make the change
-        //ternary to make sure we don't go one before the beginning
+        //the first differing character is exactly where the change was made,
+        //so the cursor goes there, as if we were about to make the change
         if(pos_undo)
-            code->cursor.position = first_change == code->src ? code->src : (first_change - 1);
+            code->cursor.position = first_change;
 
         else
             //a state that stored no cursor leaves the position at the start
@@ -151,8 +160,12 @@ static s32 getLinesCount(Code* code)
 static void getWidths(Code* code, s32* gutterWidthOut, s32* codeWidthOut)
 {
     int charCount = code->lineNumbers ? ((int)log10(code->status.lineCount + 1) + 1) : 0;
-    int gutterWidth = code->lineNumbers ? 1 + charCount * TIC_ALTFONT_WIDTH : MIN_GUTTER_WIDTH;
-    gutterWidth = MAX(gutterWidth, MIN_GUTTER_WIDTH);
+    int gutterWidth = 0;
+
+    if(code->showGutter)
+        gutterWidth = code->lineNumbers
+                          ? MAX(1 + charCount * TIC_ALTFONT_WIDTH, MIN_GUTTER_WIDTH)
+                          : MIN_GUTTER_WIDTH;
     int codeWidth = TIC80_WIDTH - gutterWidth;
 
     if(gutterWidthOut) *gutterWidthOut = gutterWidth;
@@ -175,9 +188,12 @@ static inline s32 getGutterWidth(Code* code)
 
 static void drawStatus(Code* code)
 {
+    if(!code->showStatusbar)
+        return;
+
     enum
     {
-        Height = TIC_FONT_HEIGHT + 1,
+        Height = STUDIO_TEXT_HEIGHT,
         StatusY = TIC80_HEIGHT - TIC_FONT_HEIGHT
     };
 
@@ -258,12 +274,13 @@ static void toggleBookmark(Code* code, char* codePos)
 
 static void drawGutter(Code* code)
 {
+    if(!code->showGutter)
+        return;
+
     tic_mem* tic = code->tic;
     const s32 gutterWidth = getGutterWidth(code);
-    const s32 gutterHeight = TIC80_HEIGHT - TOOLBAR_SIZE * 2;
-    tic_rect rect = {0, TOOLBAR_SIZE, gutterWidth, gutterHeight};
-    tic_rect lineNumberButtonRect = {0, rect.y + rect.h - TIC_SPRITESIZE + 1, gutterWidth, TOOLBAR_SIZE};
-    bool buttonHover = checkMousePos(code->studio, &lineNumberButtonRect);
+    const s32 gutterHeight = getCodeHeight(code);
+    tic_rect rect = {0, getStudioEditorTop(code->studio), gutterWidth, gutterHeight};
     s32 mouseOverLine = -1;
 
     // draw the background rectangle
@@ -272,30 +289,14 @@ static void drawGutter(Code* code)
     // then if the mouse is hovering over the gutter...
     if(checkMousePos(code->studio, &rect))
     {
-        // and we're inside the line number button...
-        if(buttonHover)
-        {
-            // draw it
-            setCursor(code->studio, tic_cursor_hand);
-            showTooltip(code->studio, "LINE# [alt+l]");
-            tic_api_rect(tic, rect.x, lineNumberButtonRect.y, rect.w, TIC_SPRITESIZE, tic_color_white);
-            drawBitIcon(code->studio, tic_icon_line_numbers, rect.x, lineNumberButtonRect.y, tic_color_black);
-            // and toggle line numbers if we clicked it
-            if(checkMouseClick(code->studio, &lineNumberButtonRect, tic_mouse_left))
-                code->lineNumbers = !code->lineNumbers;
-        }
-        // if we're somewhere else in the gutter...
-        else
-        {
-            // draw a bookmark preview
-            setCursor(code->studio, tic_cursor_hand);
-            showTooltip(code->studio, "BOOKMARK [ctrl+f1]");
-            s32 line = mouseOverLine = (tic_api_mouse(tic).y - rect.y) / STUDIO_TEXT_HEIGHT;
-            drawBitIcon(code->studio, tic_icon_bookmark, rect.x + gutterWidth - TIC_SPRITESIZE + 1, rect.y + line * STUDIO_TEXT_HEIGHT - 1, tic_color_dark_grey);
-            // and toggle the bookmark if we clicked it
-            if(checkMouseClick(code->studio, &rect, tic_mouse_left))
-                toggleBookmark(code, getPosByLine(code->src, line + code->scroll.y));
-        }
+        // draw a bookmark preview
+        setCursor(code->studio, tic_cursor_hand);
+        showTooltip(code->studio, "BOOKMARK [ctrl+f1]");
+        s32 line = mouseOverLine = (tic_api_mouse(tic).y - rect.y) / STUDIO_TEXT_HEIGHT;
+        drawBitIcon(code->studio, tic_icon_bookmark, rect.x + gutterWidth - TIC_SPRITESIZE + 1, rect.y + line * STUDIO_TEXT_HEIGHT - 1, tic_color_dark_grey);
+        // and toggle the bookmark if we clicked it
+        if(checkMouseClick(code->studio, &rect, tic_mouse_left))
+            toggleBookmark(code, getPosByLine(code->src, line + code->scroll.y));
     }
 
     // find the first character on the screen, including syntax pointer
@@ -338,10 +339,6 @@ static void drawGutter(Code* code)
             y++;
         }
     }
-
-    // render the button again, over the line numbers
-    tic_api_rect(tic, rect.x, lineNumberButtonRect.y, rect.w, lineNumberButtonRect.h, (code->lineNumbers || buttonHover) ? tic_color_white : tic_color_grey);
-    drawBitIcon(code->studio, tic_icon_line_numbers, rect.x, lineNumberButtonRect.y, tic_color_dark_grey);
 }
 
 static inline s32 getFontWidth(Code* code)
@@ -406,7 +403,7 @@ static void drawCode(Code* code, bool withCursor)
 {
     s32 gutterWidth, codeWidth;
     getWidths(code, &gutterWidth, &codeWidth);
-    tic_rect rect = {gutterWidth, TOOLBAR_SIZE, codeWidth, CODE_EDITOR_HEIGHT};
+    tic_rect rect = {gutterWidth, getStudioEditorTop(code->studio), codeWidth, getCodeHeight(code)};
 
     s32 xStart = rect.x - code->scroll.x * getFontWidth(code);
     s32 x = xStart;
@@ -538,25 +535,48 @@ static void drawCode(Code* code, bool withCursor)
 
 static void getCursorPosition(Code* code, s32* x, s32* y)
 {
-    *x = 0;
-    *y = 0;
+    s32 column = 0;
+    s32 line = 0;
 
     const char* pointer = code->src;
 
-    while(*pointer)
+    while(*pointer && code->cursor.position != pointer)
     {
-        if(code->cursor.position == pointer) return;
-
         if(*pointer == '\n')
         {
-            *x = 0;
-            (*y)++;
+            column = 0;
+            line++;
         }
         else
-            (*x)++;
+            column++;
 
         pointer++;
     }
+
+    if(x) *x = column;
+    if(y) *y = line;
+}
+
+// The column the caret is drawn in: a tab covers the cells up to its stop, so
+// the screen math counts it as the width it takes.
+static s32 getVisualCursorColumn(Code* code)
+{
+    const char* pointer = code->src;
+    s32 column = 0;
+
+    while(*pointer && code->cursor.position != pointer)
+    {
+        if(*pointer == '\n')
+            column = 0;
+        else if(*pointer == '\t')
+            column += getTabColumnWidth(code, column);
+        else
+            column++;
+
+        pointer++;
+    }
+
+    return column;
 }
 
 void codeGetPos(Code* code, s32* x, s32* y)
@@ -634,16 +654,17 @@ static void updateEditor(Code* code)
         code->matchedDelim = findMatchedDelim(code, code->cursor.position);
 
     const s32 BufferWidth = getCodeEditorWidth(code) / getFontWidth(code);
+    const s32 visualColumn = getVisualCursorColumn(code);
 
-    if(column < code->scroll.x)
-        code->scroll.x = column;
-    else if(column >= code->scroll.x + BufferWidth)
-        code->scroll.x = column - BufferWidth + 1;
+    if(visualColumn < code->scroll.x)
+        code->scroll.x = visualColumn;
+    else if(visualColumn >= code->scroll.x + BufferWidth)
+        code->scroll.x = visualColumn - BufferWidth + 1;
 
     if(line < code->scroll.y)
         code->scroll.y = line;
-    else if(line >= code->scroll.y + TEXT_BUFFER_HEIGHT)
-        code->scroll.y = line - TEXT_BUFFER_HEIGHT + 1;
+    else if(line >= code->scroll.y + getCodeTextHeight(code))
+        code->scroll.y = line - getCodeTextHeight(code) + 1;
 
     code->cursor.delay = TEXT_CURSOR_DELAY;
 
@@ -1289,7 +1310,7 @@ static void pageUp(Code* code)
     s32 column = 0;
     s32 line = 0;
     getCursorPosition(code, &column, &line);
-    setCursorPosition(code, column, line > TEXT_BUFFER_HEIGHT ? line - TEXT_BUFFER_HEIGHT : 0);
+    setCursorPosition(code, column, line > getCodeTextHeight(code) ? line - getCodeTextHeight(code) : 0);
 }
 
 static void pageDown(Code* code)
@@ -1298,12 +1319,12 @@ static void pageDown(Code* code)
     s32 line = 0;
     getCursorPosition(code, &column, &line);
     s32 lines = getLinesCount(code);
-    setCursorPosition(code, column, line < lines - TEXT_BUFFER_HEIGHT ? line + TEXT_BUFFER_HEIGHT : lines);
+    setCursorPosition(code, column, line < lines - getCodeTextHeight(code) ? line + getCodeTextHeight(code) : lines);
 }
 
 static void halfPageUp(Code* code)
 {
-    s32 half = TEXT_BUFFER_HEIGHT / 2;
+    s32 half = getCodeTextHeight(code) / 2;
     s32 column = 0;
     s32 line = 0;
     getCursorPosition(code, &column, &line);
@@ -1311,7 +1332,7 @@ static void halfPageUp(Code* code)
 }
 static void halfPageDown(Code* code)
 {
-    s32 half = TEXT_BUFFER_HEIGHT / 2;
+    s32 half = getCodeTextHeight(code) / 2;
     s32 column = 0;
     s32 line = 0;
     getCursorPosition(code, &column, &line);
@@ -1573,17 +1594,20 @@ static void deleteLine(Code* code)
 
 static void inputSymbolBase(Code* code, char sym)
 {
-    if(strlen(code->src) >= MAX_CODE)
-        return;
-
+    const size_t codeSize = strlen(code->src);
     const bool useStructuredEdit = shouldUseStructuredEdit(code);
     const bool isOpeningDelimiter = sym == '(' || sym == '[' || sym == '{';
+    const bool pairDelimiter = (useStructuredEdit || getConfig(code->studio)->theme.code.autoDelimiters) && isOpeningDelimiter;
+    const bool pairQuote = useStructuredEdit && isdoublequote(sym);
 
-    if((useStructuredEdit || getConfig(code->studio)->theme.code.autoDelimiters) && isOpeningDelimiter)
+    if(codeSize + ((pairDelimiter || pairQuote) ? 2 : 1) > MAX_CODE)
+        return;
+
+    if(pairDelimiter)
     {
         insertCode(code, code->cursor.position++, (const char[]){sym, matchingDelim(sym), '\0'});
     }
-    else if(useStructuredEdit && isdoublequote(sym))
+    else if(pairQuote)
     {
         insertCode(code, code->cursor.position++, (const char[]){sym, sym, '\0'});
     }
@@ -1775,12 +1799,20 @@ static bool useSpacesForTab(Code* code)
 
 static s32 insertTab(Code* code, char* line_start, char* pos)
 {
+    const size_t codeSize = strlen(code->src);
+
+    // A cart may carry more code than this build's cap allows.
+    if(codeSize >= MAX_CODE)
+        return 0;
+
+    const s32 room = (s32)(MAX_CODE - codeSize);
+
     if(useSpacesForTab(code))
     {
         s32 tab_size = getConfig(code->studio)->options.tabSize;
         s32 count = 0;
 
-        while(count < tab_size)
+        while(count < tab_size && count < room)
         {
             insertCode(code, pos++, " ");
             count++;
@@ -1955,11 +1987,11 @@ static void normalizeScroll(Code* code)
 
 static void recenterScroll(Code* code, bool emacsMode)
 {
-    s32 col, line;
-    getCursorPosition(code, &col, &line);
+    s32 line = 0;
+    getCursorPosition(code, NULL, &line);
 
-    s32 desiredCol = col - getCodeEditorWidth(code) / getFontWidth(code) / 2;
-    s32 desiredLine = MAX(0, line - TEXT_BUFFER_HEIGHT / 2);
+    s32 desiredCol = getVisualCursorColumn(code) - getCodeEditorWidth(code) / getFontWidth(code) / 2;
+    s32 desiredLine = MAX(0, line - getCodeTextHeight(code) / 2);
 
     if(emacsMode && code->scroll.y == desiredLine)
     {
@@ -1967,7 +1999,7 @@ static void recenterScroll(Code* code, bool emacsMode)
     }
     else if(emacsMode && code->scroll.y == line)
     {
-        desiredLine = line - TEXT_BUFFER_HEIGHT;
+        desiredLine = line - getCodeTextHeight(code);
     }
 
     code->scroll.x = desiredCol;
@@ -2135,94 +2167,53 @@ static void setCodeMode(Code* code, s32 mode)
     }
 }
 
-static int getNumberOfLines(Code* code)
+void codeFind(Code* code)
 {
-    char* pos = code->cursor.position;
-    char* sel = code->cursor.selection;
-
-    char* start = MIN(pos, sel);
-    while(*start == '\n')
-        start++;
-
-    char* end = MAX(pos, sel);
-    while(*end == '\n')
-        end--;
-
-    char* iter = start;
-    size_t lines = 1;
-    while(iter <= end)
-    {
-        if(*iter == '\n')
-        {
-            ++lines;
-        }
-        ++iter;
-    }
-    return (s32)lines;
+    setCodeMode(code, TEXT_FIND_MODE);
 }
 
-static char** getLines(Code* code, int lines)
+void codeGoto(Code* code)
 {
-    char* pos = code->cursor.position;
-    char* sel = code->cursor.selection;
+    setCodeMode(code, TEXT_GOTO_MODE);
+}
 
-    char* start = MIN(pos, sel);
-    while(*start == '\n')
-        ++start;
+void codeBookmarks(Code* code)
+{
+    setCodeMode(code, TEXT_BOOKMARK_MODE);
+}
 
-    char* end = MAX(pos, sel);
-    while(*end == '\n')
-        --end;
+void codeOutline(Code* code)
+{
+    setCodeMode(code, TEXT_OUTLINE_MODE);
+}
 
-    char* iter = start;
+static char* skipIndent(char* line)
+{
+    while(*line == ' ' || *line == '\t')
+        line++;
 
-    char** line_locations = malloc(sizeof(char*) * lines + 1);
-    line_locations[0] = start;
+    return line;
+}
 
-    for(int i = 1; i < lines; ++i)
-    {
-        while(iter <= end && *iter != '\n')
-            ++iter;
-        line_locations[i] = ++iter;
-    }
-    return line_locations;
+static inline bool isBlankLine(char* line)
+{
+    char* text = skipIndent(line);
+    return *text == '\n' || *text == '\0';
 }
 
 static inline bool isLineCommented(const char* comment, const char* line)
 {
-    size_t size = strlen(comment);
-    return memcmp(line, comment, size) == 0;
-};
+    // strncmp stops at the end of the text, where memcmp could read past it
+    return strncmp(line, comment, strlen(comment)) == 0;
+}
 
-static void addCommentToLine(Code* code, char* line, size_t size, const char* comment)
+// moves a cursor end past an edit of delta chars at at, so that it stays with
+// its text: an insert pushes later ends on, a delete pulls the ends inside it
+// back to its start
+static void shiftCursorEnd(char** end, char* at, s32 delta)
 {
-
-    const char* end = line + getLineSize(line);
-
-    while((*line == ' ' || *line == '\t') && line < end)
-        line++;
-
-    if(!isLineCommented(comment, line))
-    {
-        if(strlen(code->src) + size >= MAX_CODE)
-            return;
-
-        insertCode(code, line, comment);
-
-        if(code->cursor.position > line)
-            code->cursor.position += size;
-    }
-    else
-    {
-        deleteCode(code, line, line + size);
-
-        if(code->cursor.position > line + size)
-            code->cursor.position -= size;
-    }
-
-    code->cursor.selection = NULL;
-
-    parseSyntaxColor(code);
+    if(*end && *end > at)
+        *end = delta < 0 && *end - at < -delta ? at : *end + delta;
 }
 
 static void sexpify(Code* code)
@@ -2256,6 +2247,9 @@ static void sexpify(Code* code)
     }
 
     if(start == NULL || end == NULL)
+        return;
+
+    if(strlen(code->src) + 2 > MAX_CODE)
         return;
 
     insertCode(code, start, (const char[]){'(', '\0'});
@@ -2327,44 +2321,94 @@ static void toggleMark(Code* code)
 static void commentLine(Code* code)
 {
     const char* comment = tic_get_script(code->tic)->singleComment;
-    size_t size = strlen(comment);
+    s32 size = (s32)strlen(comment);
 
-    if(code->cursor.selection)
+    char* pos = code->cursor.position;
+    char* sel = code->cursor.selection;
+
+    // a cursor that is not in the text has no line to comment
+    if(!pos)
+        return;
+
+    bool selected = sel && sel != pos;
+
+    char* start = selected ? MIN(pos, sel) : pos;
+    char* end = selected ? MAX(pos, sel) : pos;
+
+    // a selection that ends at the start of a line covers none of that line
+    if(selected && end[-1] == '\n')
+        end--;
+
+    char* first = getLineByPos(code, start);
+    char* last = getLineByPos(code, end);
+
+    s32 lines = 0;
+    bool allCommented = true;
+
+    // the first and last non-blank lines, or -1 when there are none
+    s32 firstText = -1;
+    s32 lastText = -1;
+
+    // comments all go in at the smallest indent of the non-blank lines, so
+    // they line up; no indent is longer than the code
+    s32 minIndent = TIC_CODE_SIZE;
+
+    for(char* line = first; line <= last; line += getLineSize(line) + 1, lines++)
     {
-        int selectionLines = getNumberOfLines(code);
-        char** lines = getLines(code, selectionLines);
-
-        int comment_cursor = 0;
-
-        for(int i = 0; i < selectionLines; ++i)
+        if(!isBlankLine(line))
         {
+            char* text = skipIndent(line);
 
-            char* first = lines[i];
-            while(*first == ' ' || *first == '\t')
-                ++first;
-            bool lineIsComment = isLineCommented(comment, first);
+            if(firstText < 0)
+                firstText = lines;
 
-            if(i < selectionLines - 1)
-            {
-                if(*first != '\n' && lineIsComment)
-                    --comment_cursor;
-                else if(*first != '\n')
-                    ++comment_cursor;
-
-                lines[i + 1] += (size * comment_cursor);
-            }
-
-            if(*first != '\n')
-            {
-                addCommentToLine(code, lines[i], size, comment);
-            }
+            lastText = lines;
+            allCommented &= isLineCommented(comment, text);
+            minIndent = MIN(minIndent, (s32)(text - line));
         }
-
-        free(lines);
     }
-    else
-        addCommentToLine(code, getLine(code), size, comment);
 
+    // every non-blank line already commented makes this an uncomment
+    bool commentAll = !(firstText >= 0 && allCommented);
+
+    if(commentAll && strlen(code->src) + lines * size >= MAX_CODE)
+        return;
+
+    // each edit is made before the next line is found, so the walk follows
+    // the text as it moves
+    char* line = first;
+    for(s32 i = 0; i < lines; i++, line += getLineSize(line) + 1)
+    {
+        // blank lines before the first or after the last non-blank line of a
+        // selection are left alone, so an all-blank selection does nothing;
+        // those between are commented along with the rest; with no selection
+        // the cursor line is always toggled
+        bool outside = selected && (i < firstText || i > lastText);
+
+        if(isBlankLine(line) && (outside || !commentAll))
+            continue;
+
+        char* text = skipIndent(line);
+
+        if(commentAll)
+        {
+            // a blank line shorter than the smallest indent takes the comment
+            // at its end
+            text = line + MIN(minIndent, (s32)(text - line));
+
+            insertCode(code, text, comment);
+            shiftCursorEnd(&code->cursor.position, text, size);
+            shiftCursorEnd(&code->cursor.selection, text, size);
+        }
+        else
+        {
+            deleteCode(code, text, text + size);
+            shiftCursorEnd(&code->cursor.position, text, -size);
+            shiftCursorEnd(&code->cursor.selection, text, -size);
+        }
+    }
+
+    parseSyntaxColor(code);
     history(code);
 }
 
@@ -2374,6 +2418,9 @@ static void dupLine(Code* code)
     if(*start)
     {
         s32 size = getLineSize(start) + 1;
+
+        if(strlen(code->src) + size > MAX_CODE)
+            return;
 
         insertCodeSize(code, start, start, size);
 
@@ -3076,10 +3123,10 @@ static void processViKeyboard(Code* code)
                 copyFromClipboard(code, false);
         }
         else if(alt && keyWasPressed(code->studio, tic_key_f))
-            code->altFont = !code->altFont;
+            studioCodeViewToggle(code->studio, CodeViewFont);
 
         else if(alt && keyWasPressed(code->studio, tic_key_s))
-            code->shadowText = !code->shadowText;
+            studioCodeViewToggle(code->studio, CodeViewShadow);
 
         else if(clear && keyWasPressed(code->studio, tic_key_1))
             processViGoto(code, 1);
@@ -3338,6 +3385,8 @@ static void processKeyboard(Code* code)
     }
 
     bool usedKeybinding = true;
+    // The Alt branch reads the text even when no binding uses it.
+    char text = '\0';
 
     if(hasJustSwitchedToCodeMode(code->studio))
     {
@@ -3429,7 +3478,8 @@ static void processKeyboard(Code* code)
         bool altHandled = false;
         if(alt)
         {
-            char sym = getKeyboardText(code->studio);
+            text = getKeyboardText(code->studio);
+            char sym = text;
             altHandled = true;
             if(keyWasPressed(code->studio, tic_key_p))
                 pageUp(code);
@@ -3464,7 +3514,7 @@ static void processKeyboard(Code* code)
             else if(keyWasPressed(code->studio, tic_key_semicolon))
                 emacsMode ? commentLine(code) : noop;
             else if(keyWasPressed(code->studio, tic_key_l) && !ctrl)
-                code->lineNumbers = !code->lineNumbers;
+                studioCodeViewToggle(code->studio, CodeViewLineNumbers);
             else
                 altHandled = false;
         }
@@ -3526,7 +3576,7 @@ static void processKeyboard(Code* code)
         updateEditor(code);
     else
     {
-        char sym = getKeyboardText(code->studio);
+        char sym = text ? text : getKeyboardText(code->studio);
         if(sym)
         {
             inputSymbol(code, sym);
@@ -3540,12 +3590,12 @@ static void processMouse(Code* code)
     tic_mem* tic = code->tic;
     s32 gutterWidth, codeWidth;
     getWidths(code, &gutterWidth, &codeWidth);
-    tic_rect rect = {gutterWidth, TOOLBAR_SIZE, codeWidth, CODE_EDITOR_HEIGHT};
+    tic_rect rect = {gutterWidth, getStudioEditorTop(code->studio), codeWidth, getCodeHeight(code)};
 
     if(checkMousePos(code->studio, &rect))
     {
-        bool useDrag = (code->mode == TEXT_DRAG_CODE && checkMouseDown(code->studio, &rect, tic_mouse_left)) || checkMouseDown(code->studio, &rect, tic_mouse_right);
-        setCursor(code->studio, code->mode == TEXT_DRAG_CODE || useDrag ? tic_cursor_hand : tic_cursor_ibeam);
+        bool useDrag = checkMouseDown(code->studio, &rect, tic_mouse_right);
+        setCursor(code->studio, useDrag ? tic_cursor_hand : tic_cursor_ibeam);
 
         if(code->scroll.active)
         {
@@ -3609,17 +3659,6 @@ static void processMouse(Code* code)
     }
 }
 
-static void textDragTick(Code* code)
-{
-
-    processMouse(code);
-
-    tic_api_cls(code->tic, getConfig(code->studio)->theme.code.BG);
-
-    drawCode(code, true);
-    drawStatus(code);
-}
-
 static void textEditTick(Code* code)
 {
     tic_mem* tic = code->tic;
@@ -3662,9 +3701,10 @@ static void drawPopupBar(Code* code, const char* title)
     s32 pos = code->anim.pos;
     const s32 TextX = getGutterWidth(code);
 
-    tic_api_rect(code->tic, 0, TOOLBAR_SIZE + pos, TIC80_WIDTH, TIC_FONT_HEIGHT + 1, tic_color_grey);
+    const s32 bar = getStudioEditorTop(code->studio);
+    tic_api_rect(code->tic, 0, bar + pos, TIC80_WIDTH, TIC_FONT_HEIGHT + 1, tic_color_grey);
 
-    s32 textY = (TOOLBAR_SIZE + 1) + pos;
+    s32 textY = (bar + 1) + pos;
 
     if(code->shadowText)
         tic_api_print(code->tic, title, TextX + 1, textY + 1, tic_color_black, true, 1, code->altFont);
@@ -3778,6 +3818,9 @@ static void textReplaceTick(Code* code)
             size_t src_length = strlen(code->src);
             while(pos != NULL)
             {
+                if(strlen(code->src) + strlen(code->popup.offset) - strlen(code->popup.text) > MAX_CODE)
+                    break;
+
                 deleteCode(code, pos, pos + strlen(code->popup.text));
                 insertCode(code, pos, code->popup.offset);
                 pos += strlen(code->popup.offset);
@@ -3878,7 +3921,7 @@ static void textGoToTick(Code* code)
     tic_api_cls(tic, getConfig(code->studio)->theme.code.BG);
 
     if(code->jump.line >= 0)
-        tic_api_rect(tic, 0, (code->jump.line - code->scroll.y) * (TIC_FONT_HEIGHT + 1) + TOOLBAR_SIZE,
+        tic_api_rect(tic, 0, (code->jump.line - code->scroll.y) * (TIC_FONT_HEIGHT + 1) + getStudioEditorTop(code->studio),
                      TIC80_WIDTH, TIC_FONT_HEIGHT + 2, getConfig(code->studio)->theme.code.select);
 
     drawCode(code, false);
@@ -3949,8 +3992,8 @@ static void drawSidebarBar(Code* code, s32 x, s32 y)
 
 static void normSidebarScroll(Code* code)
 {
-    code->sidebar.scroll = code->sidebar.size > TEXT_BUFFER_HEIGHT
-                               ? CLAMP(code->sidebar.scroll, 0, code->sidebar.size - TEXT_BUFFER_HEIGHT)
+    code->sidebar.scroll = code->sidebar.size > OUTLINE_ROWS
+                               ? CLAMP(code->sidebar.scroll, 0, code->sidebar.size - OUTLINE_ROWS)
                                : 0;
 }
 
@@ -3962,9 +4005,9 @@ static void updateSidebarIndex(Code* code, s32 value)
     code->sidebar.index = CLAMP(value, 0, code->sidebar.size - 1);
 
     if(code->sidebar.index - code->sidebar.scroll < 0)
-        code->sidebar.scroll -= TEXT_BUFFER_HEIGHT;
-    else if(code->sidebar.index - code->sidebar.scroll >= TEXT_BUFFER_HEIGHT)
-        code->sidebar.scroll += TEXT_BUFFER_HEIGHT;
+        code->sidebar.scroll -= OUTLINE_ROWS;
+    else if(code->sidebar.index - code->sidebar.scroll >= OUTLINE_ROWS)
+        code->sidebar.scroll += OUTLINE_ROWS;
 
     updateSidebarCode(code);
     normSidebarScroll(code);
@@ -3995,10 +4038,10 @@ static void processSidebar(Code* code)
         updateSidebarIndex(code, code->sidebar.index + 1);
 
     else if(keyWasPressed(code->studio, tic_key_left) || keyWasPressed(code->studio, tic_key_pageup))
-        updateSidebarIndex(code, code->sidebar.index - TEXT_BUFFER_HEIGHT);
+        updateSidebarIndex(code, code->sidebar.index - OUTLINE_ROWS);
 
     else if(keyWasPressed(code->studio, tic_key_right) || keyWasPressed(code->studio, tic_key_pagedown))
-        updateSidebarIndex(code, code->sidebar.index + TEXT_BUFFER_HEIGHT);
+        updateSidebarIndex(code, code->sidebar.index + OUTLINE_ROWS);
 
     else if(keyWasPressed(code->studio, tic_key_home))
         updateSidebarIndex(code, 0);
@@ -4057,149 +4100,6 @@ static void textOutlineTick(Code* code)
     drawPopupBar(code, "FUNC:");
 }
 
-// The active mode button is three layers in the old code: a grey cell, the
-// icon again one line down in black, and the icon in white on top.
-typedef struct
-{
-    u8 icon;
-    bool active;
-
-} ModeButton;
-
-static void modeButton(Toolbar* tb, const tic_rect* rect, bool over, void* ctx)
-{
-    const ModeButton* btn = ctx;
-    const tic_tiles* tiles = &tb->config->cart->bank0.tiles;
-
-    if(btn->active)
-    {
-        tic_api_rect(tb->tic, rect->x, rect->y + tb->y, rect->w, rect->h, tic_color_grey);
-        ui_icon(tb->tic, tiles, btn->icon, rect->x, rect->y + tb->y + 1, tic_color_black);
-    }
-
-    ui_icon(tb->tic, tiles, btn->icon, rect->x, rect->y + tb->y,
-            btn->active ? tic_color_white : over ? tic_color_grey
-                                                 : tic_color_light_grey);
-}
-
-// The font button is a glyph, not an icon, and it was drawn a pixel in from its
-// cell. Its colour does not change with the font — the shape does.
-static void fontButton(Toolbar* tb, const tic_rect* rect, bool over, void* ctx)
-{
-    Code* code = ctx;
-
-    tic_api_print(tb->tic, "F", rect->x, rect->y + tb->y + 1,
-                  over ? tic_color_grey : tic_color_light_grey, true, 1, code->altFont);
-}
-
-// Two icons on one cell: the shadow glyph, and a filled one over it when the
-// shadow is on. Neither `pressed` nor `color` says that.
-static void shadowButton(Toolbar* tb, const tic_rect* rect, bool over, void* ctx)
-{
-    Code* code = ctx;
-    const tic_tiles* tiles = &tb->config->cart->bank0.tiles;
-
-    ui_icon(tb->tic, tiles, tic_icon_shadow, rect->x, rect->y + tb->y,
-            over && !code->shadowText ? tic_color_grey : tic_color_light_grey);
-
-    if(code->shadowText)
-        ui_icon(tb->tic, tiles, tic_icon_shadow2, rect->x, rect->y + tb->y, tic_color_black);
-}
-
-// The strip's right rail. Drawn by the host after this editor's tick, so it
-// never sees the strip's background and never paints one.
-void codeBand(void* app, Toolbar* tb)
-{
-    Code* code = app;
-
-    static const struct
-    {
-        u8 icon;
-        const char* tip;
-    } Buttons[] =
-        {
-            {tic_icon_hand, "DRAG [right mouse]"},
-            {tic_icon_find, "FIND [ctrl+f]"},
-            {tic_icon_goto, "GOTO [ctrl+g]"},
-            {tic_icon_bookmark, "BOOKMARKS [ctrl+b]"},
-            {tic_icon_outline, "OUTLINE [ctrl+o]"},
-        };
-
-    enum
-    {
-        Count = COUNT_OF(Buttons),
-        Size = 7,
-        Small = TIC_FONT_WIDTH
-    };
-
-    // The rail packs right to left, and this editor's order runs the other way.
-    for(s32 i = Count - 1; i >= 0; i--)
-    {
-        ModeButton mode = {Buttons[i].icon, i == (s32)code->mode && isIdle(code)};
-
-        ToolbarButton button =
-            {
-                .tip = Buttons[i].tip,
-                .width = Size,
-                .enabled = true,
-                .draw = modeButton,
-                .ctx = &mode,
-            };
-
-        if(toolbar_button(tb, &button))
-        {
-            if((s32)code->mode == i)
-                code->escape(code);
-            else
-                setCodeMode(code, i);
-        }
-    }
-
-    // These three carry a pixel of slack, which is what put them at 198, 191
-    // and 184 before; the rail packs with no gap of its own.
-    {
-        ToolbarButton button =
-            {
-                .icon = tic_icon_run,
-                .tip = "RUN [ctrl+r]",
-                .width = Small + 1,
-                .color = tic_color_light_grey,
-                .enabled = true,
-            };
-
-        if(toolbar_button(tb, &button))
-            runGame(code->studio, RUN_FROM_STUDIO);
-    }
-
-    {
-        ToolbarButton button =
-            {
-                .tip = "SHOW SHADOW",
-                .width = Small + 1,
-                .enabled = true,
-                .draw = shadowButton,
-                .ctx = code,
-            };
-
-        if(toolbar_button(tb, &button))
-            code->shadowText = !code->shadowText;
-    }
-
-    {
-        ToolbarButton button =
-            {
-                .tip = "SWITCH FONT",
-                .width = Small + 1,
-                .enabled = true,
-                .draw = fontButton,
-                .ctx = code,
-            };
-
-        if(toolbar_button(tb, &button))
-            code->altFont = !code->altFont;
-    }
-}
-
 static void tick(Code* code)
 {
     processAnim(code->anim.movie, code);
@@ -4209,7 +4109,6 @@ static void tick(Code* code)
 
     switch(code->mode)
     {
-        case TEXT_DRAG_CODE: textDragTick(code); break;
         case TEXT_EDIT_MODE: textEditTick(code); break;
         case TEXT_FIND_MODE: textFindTick(code); break;
         case TEXT_REPLACE_MODE: textReplaceTick(code); break;
@@ -4226,9 +4125,6 @@ static void escape(Code* code)
     switch(code->mode)
     {
         case TEXT_EDIT_MODE:
-            break;
-        case TEXT_DRAG_CODE:
-            setCodeMode(code, TEXT_EDIT_MODE);
             break;
         default:
             if(code->popup.prevPos == NULL)
@@ -4300,7 +4196,8 @@ const ClipboardOps CodeClipboard = {clipboardCut, clipboardCopy, clipboardPaste,
 
 void initCode(Code* code, Studio* studio)
 {
-    bool firstLoad = code->state == NULL;
+    const struct StudioOptions* options = &getConfig(studio)->options;
+
     FREE(code->state);
     freeAnim(code);
 
@@ -4334,9 +4231,11 @@ void initCode(Code* code, Studio* studio)
                 .scroll = 0,
             },
         .matchedDelim = NULL,
-        .altFont = firstLoad ? getConfig(studio)->theme.code.altFont : code->altFont,
-        .shadowText = getConfig(studio)->theme.code.shadow,
-        .lineNumbers = firstLoad ? getConfig(studio)->theme.code.lineNumbers : code->lineNumbers,
+        .altFont = options->codeAltFont,
+        .shadowText = options->codeShadow,
+        .lineNumbers = options->codeLineNumbers,
+        .showGutter = options->codeSidebar,
+        .showStatusbar = options->codeStatusbar,
         .anim =
             {
                 .idle = {
@@ -4344,12 +4243,12 @@ void initCode(Code* code, Studio* studio)
                 },
 
                 .show = MOVIE_DEF(STUDIO_ANIM_TIME, setIdle, {
-                                                                 {-TOOLBAR_SIZE, 0, STUDIO_ANIM_TIME, &code->anim.pos, AnimEaseIn},
+                                                                 {-STUDIO_BAR_HEIGHT, 0, STUDIO_ANIM_TIME, &code->anim.pos, AnimEaseIn},
                                                                  {SIDEBAR_WIDTH, 0, STUDIO_ANIM_TIME, &code->anim.sidebar, AnimEaseIn},
                                                              }),
 
                 .hide = MOVIE_DEF(STUDIO_ANIM_TIME, setEditMode, {
-                                                                     {0, -TOOLBAR_SIZE, STUDIO_ANIM_TIME, &code->anim.pos, AnimEaseIn},
+                                                                     {0, -STUDIO_BAR_HEIGHT, STUDIO_ANIM_TIME, &code->anim.pos, AnimEaseIn},
                                                                      {0, SIDEBAR_WIDTH, STUDIO_ANIM_TIME, &code->anim.sidebar, AnimEaseIn},
                                                                  }),
             },
@@ -4424,7 +4323,8 @@ void trimWhitespace(Code* code)
     while(dst[-1] == '\n')
         --dst;
     if(dst < limit) ++dst;
-    if(dst < limit) *dst = '\0';
+    // limit is inside the array: MAX_CODE leaves a byte for the terminator.
+    *dst = '\0';
 
     // Move the cursor back if it was on one of the trimmed newlines.
     if(code->cursor.position > dst) code->cursor.position = dst;

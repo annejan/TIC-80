@@ -63,9 +63,6 @@ static void readConfig(Config* config)
         config->data.theme.code.select = (u8)(json_int("SELECT", theme));
         config->data.theme.code.cursor = (u8)(json_int("CURSOR", theme));
 
-        config->data.theme.code.shadow = json_bool("SHADOW", theme);
-        config->data.theme.code.altFont = json_bool("ALT_FONT", theme);
-        config->data.theme.code.lineNumbers = json_bool("LINE_NUMBERS", theme);
         config->data.theme.code.altCaret = json_bool("ALT_CARET", theme);
         config->data.theme.code.matchDelimiters = json_bool("MATCH_DELIMITERS", theme);
         config->data.theme.code.autoDelimiters = json_bool("AUTO_DELIMITERS", theme);
@@ -99,11 +96,16 @@ static void setDefault(Config* config)
 #if defined(BUILD_RENDER_CACHE)
                 .drawCache = true,
 #endif
+#if defined(BUILD_SURF)
                 .autosave = false,
+#endif
 #if defined(BUILD_EDITORS)
                 .keybindMode = KEYBIND_STANDARD,
                 .tabMode = TAB_AUTO,
                 .tabSize = 1,
+                .musicTracker = false,
+                .codeShadow = true,
+                .codeStatusbar = true,
 #endif
             },
     };
@@ -210,8 +212,10 @@ static void loadOptions(Config* config)
                 if(json_has("volume", 0))
                     options->volume = json_int("volume", 0);
 
+#if defined(BUILD_SURF)
                 if(json_has("autosave", 0))
                     options->autosave = json_bool("autosave", 0);
+#endif
 
                 // Two bounds matter here: a file without "mapping" used to read
                 // the whole document (a missing key resolves to token 0, the root
@@ -236,6 +240,30 @@ static void loadOptions(Config* config)
 
                 if(json_has("tabSize", 0))
                     options->tabSize = json_int("tabSize", 0);
+
+                if(json_has("musicTracker", 0))
+                    options->musicTracker = json_bool("musicTracker", 0);
+
+                if(json_has("codeAltFont", 0))
+                    options->codeAltFont = json_bool("codeAltFont", 0);
+
+                if(json_has("codeShadow", 0))
+                    options->codeShadow = json_bool("codeShadow", 0);
+
+                if(json_has("codeLineNumbers", 0))
+                    options->codeLineNumbers = json_bool("codeLineNumbers", 0);
+
+                if(json_has("codeSidebar", 0))
+                    options->codeSidebar = json_bool("codeSidebar", 0);
+
+                if(json_has("codeStatusbar", 0))
+                    options->codeStatusbar = json_bool("codeStatusbar", 0);
+
+                if(json_has("autohide", 0))
+                    options->autohide = json_bool("autohide", 0);
+
+                if(json_has("compactBar", 0))
+                    options->compactBar = json_bool("compactBar", 0);
 #endif
             }
         }
@@ -271,13 +299,23 @@ static void saveOptions(Config* config)
             "\"drawCache\":%s, "
 #endif
             "\"volume\":%i, "
+#if defined(BUILD_SURF)
             "\"autosave\":%s, "
+#endif
             "\"mapping\":\"%s\""
 #if defined(BUILD_EDITORS)
             ", "
             "\"keybindMode\":%i, "
             "\"tabMode\":%i, "
-            "\"tabSize\":%i"
+            "\"tabSize\":%i, "
+            "\"musicTracker\":%s, "
+            "\"codeAltFont\":%s, "
+            "\"codeShadow\":%s, "
+            "\"codeLineNumbers\":%s, "
+            "\"codeSidebar\":%s, "
+            "\"codeStatusbar\":%s, "
+            "\"autohide\":%s, "
+            "\"compactBar\":%s"
 #endif
             " }",
 #if defined(CRT_SHADER_SUPPORT)
@@ -290,14 +328,24 @@ static void saveOptions(Config* config)
             bool2str(options->drawCache),
 #endif
             options->volume,
+#if defined(BUILD_SURF)
             bool2str(options->autosave),
+#endif
             data2str(&options->mapping, sizeof options->mapping).data
 
 #if defined(BUILD_EDITORS)
             ,
             options->keybindMode,
             options->tabMode,
-            options->tabSize
+            options->tabSize,
+            bool2str(options->musicTracker),
+            bool2str(options->codeAltFont),
+            bool2str(options->codeShadow),
+            bool2str(options->codeLineNumbers),
+            bool2str(options->codeSidebar),
+            bool2str(options->codeStatusbar),
+            bool2str(options->autohide),
+            bool2str(options->compactBar)
 #endif
     );
 
