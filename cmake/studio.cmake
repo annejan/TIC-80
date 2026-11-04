@@ -9,9 +9,13 @@ set(TIC80STUDIO_SRC
     ${TIC80LIB_DIR}/studio/screens/mainmenu.c
     ${TIC80LIB_DIR}/studio/screens/start.c
     ${TIC80LIB_DIR}/studio/studio.c
+    # The mode machine's decisions: the door, the return target, the run
+    # record and the ESC rule, pure over a state value.
+    ${TIC80LIB_DIR}/studio/modes.c
     # The state of a launch that came with a cart: every build boots, so this
     # is not editors-only.
     ${TIC80LIB_DIR}/studio/boot.c
+    ${TIC80LIB_DIR}/studio/anim.c
     # The cart an app image carries, which `export game` writes and the launch
     # reads: bytes and the core's zipper, with no studio in it.
     ${TIC80LIB_DIR}/studio/embed.c
@@ -53,13 +57,21 @@ if(BUILD_EDITORS)
         # The bar is the editors' shell: a build without them never draws it.
         ${TIC80LIB_DIR}/studio/menubar.c
         ${TIC80LIB_DIR}/studio/studiomenu.c
+        # The export commands the bar sends: the name, the suffix and the
+        # arguments, tested without the studio.
+        ${TIC80LIB_DIR}/studio/export.c
         ${TIC80LIB_DIR}/studio/screens/console.c
-        ${TIC80LIB_DIR}/studio/editors/code.c
-        ${TIC80LIB_DIR}/studio/editors/sprite.c
-        ${TIC80LIB_DIR}/studio/editors/map.c
-        ${TIC80LIB_DIR}/studio/editors/world.c
-        ${TIC80LIB_DIR}/studio/editors/sfx.c
-        ${TIC80LIB_DIR}/studio/editors/music.c
+        ${TIC80LIB_DIR}/studio/clipboard.c
+        ${TIC80LIB_DIR}/studio/editors/code/text.c
+        ${TIC80LIB_DIR}/studio/editors/code/find.c
+        ${TIC80LIB_DIR}/studio/editors/code/vi.c
+        ${TIC80LIB_DIR}/studio/editors/code/minimap.c
+        ${TIC80LIB_DIR}/studio/editors/code/code.c
+        ${TIC80LIB_DIR}/studio/editors/sprite/sprite.c
+        ${TIC80LIB_DIR}/studio/editors/map/map.c
+        ${TIC80LIB_DIR}/studio/editors/map/world.c
+        ${TIC80LIB_DIR}/studio/editors/sfx/sfx.c
+        ${TIC80LIB_DIR}/studio/editors/music/music.c
         ${TIC80LIB_DIR}/ext/history.c
         ${TIC80LIB_DIR}/ext/gif.c
     )

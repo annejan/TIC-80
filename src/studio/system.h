@@ -73,17 +73,10 @@ extern "C"
     void tic_sys_update_config();
     void tic_sys_default_mapping(tic_mapping* mapping);
 
-    // clang-format off
-#define CODE_COLORS_LIST(macro) \
-    macro(BG)       \
-    macro(FG)       \
-    macro(STRING)   \
-    macro(NUMBER)   \
-    macro(KEYWORD)  \
-    macro(API)      \
-    macro(COMMENT)  \
-    macro(SIGN)
-    // clang-format on
+#if defined(__TIC_ANDROID__)
+    // The JavaVM naett needs; the layer knows where it comes from.
+    void* tic_sys_java_vm(void);
+#endif
 
     enum KeybindMode
     {
@@ -165,6 +158,7 @@ extern "C"
             bool codeLineNumbers;
             bool codeSidebar;
             bool codeStatusbar;
+            bool codeMinimap;
             bool autohide;
             bool compactBar;
 #endif
@@ -183,8 +177,6 @@ extern "C"
 
     typedef struct Studio Studio;
 
-    void setJustSwitchedToCodeMode(Studio* studio, bool value);
-    bool hasJustSwitchedToCodeMode(Studio* studio);
     const tic_mem* studio_mem(Studio* studio);
     void studio_tick(Studio* studio, tic80_input input);
     void studio_sound(Studio* studio);

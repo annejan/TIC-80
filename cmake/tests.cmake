@@ -34,6 +34,12 @@ if(BUILD_TESTS)
         tic80_add_test(js-test)
     endif()
 
+    if(BUILD_WITH_FORTH)
+        add_executable(forth-test ${CMAKE_SOURCE_DIR}/tests/forth.c)
+        target_link_libraries(forth-test PRIVATE forth tic80core)
+        tic80_add_test(forth-test)
+    endif()
+
     # The menu bar is tested against the core alone: linking tic80studio instead
     # would hide a call into studio.c, which is the one thing this test is for.
     # The bar draws its icons and cursor through the ui module, so that builds
@@ -125,6 +131,38 @@ if(BUILD_TESTS)
     target_link_libraries(embed-test PRIVATE tic80core)
     tic80_add_test(embed-test)
 
+    # The launch links without the studio as well: the module, the embedded
+    # cart format and the core, over an image the test writes itself and reads
+    # through the platform readers it answers.
+    add_executable(boot-test
+        ${CMAKE_SOURCE_DIR}/tests/boot.c
+        ${CMAKE_SOURCE_DIR}/src/studio/boot.c
+        ${CMAKE_SOURCE_DIR}/src/studio/embed.c
+    )
+
+    target_link_libraries(boot-test PRIVATE tic80core)
+    tic80_add_test(boot-test)
+
+    # The project cart's text format links without the studio: the module and
+    # the core, the comment coming from the static script registry — so only a
+    # static build with a language has one. The cart goes into a buffer and
+    # comes back, and the malformed texts are the test's own.
+    if(BUILD_STATIC AND BUILD_WITH_LUA)
+        add_executable(project-test
+            ${CMAKE_SOURCE_DIR}/tests/project.c
+            ${CMAKE_SOURCE_DIR}/src/studio/project.c
+        )
+
+        target_link_libraries(project-test PRIVATE tic80core)
+
+        # A second comment, one character long, where the language is built.
+        if(BUILD_WITH_PYTHON)
+            target_compile_definitions(project-test PRIVATE PROJECT_TEST_PYTHON)
+        endif()
+
+        tic80_add_test(project-test)
+    endif()
+
     # The editor history is a byte buffer and the deltas between its commits:
     # the standard library is all it needs.
     add_executable(history-test
@@ -167,6 +205,281 @@ if(BUILD_TESTS)
     target_include_directories(console-test PRIVATE ${CMAKE_BINARY_DIR} ${THIRDPARTY_DIR}/jsmn)
     target_link_libraries(console-test PRIVATE tic80core zip)
     tic80_add_test(console-test)
+
+    # The studio's three services link without the studio: the filesystem, the
+    # config and the cart service, with the core, the zip and the json, over a
+    # root the test makes and wipes itself.
+    add_executable(studio-services-test
+        ${CMAKE_SOURCE_DIR}/tests/studio_services.c
+        ${CMAKE_SOURCE_DIR}/src/studio/fs.c
+        ${CMAKE_SOURCE_DIR}/src/studio/net.c
+        ${CMAKE_SOURCE_DIR}/src/studio/config.c
+        ${CMAKE_SOURCE_DIR}/src/studio/rom.c
+        ${CMAKE_SOURCE_DIR}/src/ext/json.c
+    )
+
+    target_include_directories(studio-services-test PRIVATE ${CMAKE_BINARY_DIR} ${THIRDPARTY_DIR}/jsmn)
+    # The config's editor options need BUILD_EDITORS; the net stub links the
+    # fs paths that definition opens, and no test reaches the network.
+    target_compile_definitions(studio-services-test PRIVATE BUILD_EDITORS)
+    target_link_libraries(studio-services-test PRIVATE tic80core zip)
+    tic80_add_test(studio-services-test)
+
+    # The code editor's text model links with the history module alone: the
+    # buffer, the state array, the cap and the caret are driven without the
+    # studio, a machine or a screen. The PRO target compiles the same model
+    # with the other cap (sizeof(tic_code) - 1) and reruns every test on it.
+    set(CODE_TEXT_TEST_SRC
+        ${CMAKE_SOURCE_DIR}/tests/code_text.c
+        ${CMAKE_SOURCE_DIR}/src/studio/editors/code/text.c
+        ${CMAKE_SOURCE_DIR}/src/ext/history.c
+    )
+
+    # The search model links with the text model alone: the outline, the
+    # bookmarks, goto and the plain-text search are driven without the studio
+    # or any screen.
+    add_executable(code-find-test
+        ${CMAKE_SOURCE_DIR}/tests/code_find.c
+        ${CMAKE_SOURCE_DIR}/src/studio/editors/code/find.c
+        ${CMAKE_SOURCE_DIR}/src/studio/editors/code/text.c
+        ${CMAKE_SOURCE_DIR}/src/ext/history.c
+    )
+
+    tic80_add_test(code-find-test)
+
+    # The vi machine links without the studio too: the text model, the search
+    # model, the keyboard module and the core, with a fake host that records
+    # what the machine asks for. Keys are pressed into the machine's input
+    # buffers, as tests/keyboard.c does.
+    add_executable(code-vi-test
+        ${CMAKE_SOURCE_DIR}/tests/code_vi.c
+        ${CMAKE_SOURCE_DIR}/src/studio/editors/code/vi.c
+        ${CMAKE_SOURCE_DIR}/src/studio/editors/code/find.c
+        ${CMAKE_SOURCE_DIR}/src/studio/editors/code/text.c
+        ${CMAKE_SOURCE_DIR}/src/studio/keyboard.c
+        ${CMAKE_SOURCE_DIR}/src/ext/history.c
+    )
+
+    target_include_directories(code-vi-test PRIVATE ${CMAKE_BINARY_DIR})
+    target_link_libraries(code-vi-test PRIVATE tic80core)
+    tic80_add_test(code-vi-test)
+
+    # The whole code editor links without the studio: the editor, its three
+    # models, the keyboard, the mouse and the ui modules, with a fake host that
+    # records what the editor asks for.
+    add_executable(code-editor-test
+        ${CMAKE_SOURCE_DIR}/tests/code_editor.c
+        ${CMAKE_SOURCE_DIR}/src/studio/editors/code/code.c
+        ${CMAKE_SOURCE_DIR}/src/studio/editors/code/minimap.c
+        ${CMAKE_SOURCE_DIR}/src/studio/editors/code/text.c
+        ${CMAKE_SOURCE_DIR}/src/studio/editors/code/find.c
+        ${CMAKE_SOURCE_DIR}/src/studio/editors/code/vi.c
+        ${CMAKE_SOURCE_DIR}/src/studio/anim.c
+        ${CMAKE_SOURCE_DIR}/src/studio/keyboard.c
+        ${CMAKE_SOURCE_DIR}/src/studio/mouse.c
+        ${CMAKE_SOURCE_DIR}/src/studio/ui.c
+        ${CMAKE_SOURCE_DIR}/src/ext/history.c
+    )
+
+    target_include_directories(code-editor-test PRIVATE ${CMAKE_BINARY_DIR})
+    target_link_libraries(code-editor-test PRIVATE tic80core)
+    tic80_add_test(code-editor-test)
+
+    # The map editor and its world view link without the studio: the two
+    # editors, the animation, the keyboard, the mouse, the ui, the clipboard
+    # and the history modules, with a fake host that records the two asks.
+    add_executable(map-editor-test
+        ${CMAKE_SOURCE_DIR}/tests/map_editor.c
+        ${CMAKE_SOURCE_DIR}/src/studio/editors/map/map.c
+        ${CMAKE_SOURCE_DIR}/src/studio/editors/map/world.c
+        ${CMAKE_SOURCE_DIR}/src/studio/anim.c
+        ${CMAKE_SOURCE_DIR}/src/studio/keyboard.c
+        ${CMAKE_SOURCE_DIR}/src/studio/mouse.c
+        ${CMAKE_SOURCE_DIR}/src/studio/ui.c
+        ${CMAKE_SOURCE_DIR}/src/studio/clipboard.c
+        ${CMAKE_SOURCE_DIR}/src/ext/history.c
+    )
+
+    target_include_directories(map-editor-test PRIVATE ${CMAKE_BINARY_DIR})
+    target_link_libraries(map-editor-test PRIVATE tic80core)
+    tic80_add_test(map-editor-test)
+
+    # The sfx editor links without the studio: the editor, the keyboard, the
+    # mouse, the ui, the clipboard, the sound and the history modules, with a
+    # fake host that records the tooltip.
+    add_executable(sfx-editor-test
+        ${CMAKE_SOURCE_DIR}/tests/sfx_editor.c
+        ${CMAKE_SOURCE_DIR}/src/studio/editors/sfx/sfx.c
+        ${CMAKE_SOURCE_DIR}/src/studio/keyboard.c
+        ${CMAKE_SOURCE_DIR}/src/studio/mouse.c
+        ${CMAKE_SOURCE_DIR}/src/studio/ui.c
+        ${CMAKE_SOURCE_DIR}/src/studio/clipboard.c
+        ${CMAKE_SOURCE_DIR}/src/studio/sound.c
+        ${CMAKE_SOURCE_DIR}/src/ext/history.c
+    )
+
+    target_include_directories(sfx-editor-test PRIVATE ${CMAKE_BINARY_DIR})
+    target_link_libraries(sfx-editor-test PRIVATE tic80core)
+    tic80_add_test(sfx-editor-test)
+
+    # The sprite editor links without the studio: the editor, the animation,
+    # the keyboard, the mouse, the ui, the clipboard and the history modules,
+    # with a fake host that records the tooltip.
+    add_executable(sprite-editor-test
+        ${CMAKE_SOURCE_DIR}/tests/sprite_editor.c
+        ${CMAKE_SOURCE_DIR}/src/studio/editors/sprite/sprite.c
+        ${CMAKE_SOURCE_DIR}/src/studio/anim.c
+        ${CMAKE_SOURCE_DIR}/src/studio/keyboard.c
+        ${CMAKE_SOURCE_DIR}/src/studio/mouse.c
+        ${CMAKE_SOURCE_DIR}/src/studio/ui.c
+        ${CMAKE_SOURCE_DIR}/src/studio/clipboard.c
+        ${CMAKE_SOURCE_DIR}/src/ext/history.c
+    )
+
+    target_include_directories(sprite-editor-test PRIVATE ${CMAKE_BINARY_DIR})
+    target_link_libraries(sprite-editor-test PRIVATE tic80core)
+    tic80_add_test(sprite-editor-test)
+
+    # The music editor links without the studio: the editor, the keyboard,
+    # the mouse, the ui, the clipboard, the sound and the history modules,
+    # with a fake host that records the tooltip.
+    add_executable(music-editor-test
+        ${CMAKE_SOURCE_DIR}/tests/music_editor.c
+        ${CMAKE_SOURCE_DIR}/src/studio/editors/music/music.c
+        ${CMAKE_SOURCE_DIR}/src/studio/keyboard.c
+        ${CMAKE_SOURCE_DIR}/src/studio/mouse.c
+        ${CMAKE_SOURCE_DIR}/src/studio/ui.c
+        ${CMAKE_SOURCE_DIR}/src/studio/clipboard.c
+        ${CMAKE_SOURCE_DIR}/src/studio/sound.c
+        ${CMAKE_SOURCE_DIR}/src/ext/history.c
+    )
+
+    target_include_directories(music-editor-test PRIVATE ${CMAKE_BINARY_DIR})
+    target_link_libraries(music-editor-test PRIVATE tic80core)
+    tic80_add_test(music-editor-test)
+
+    # The list menu links without the studio: the widget, the animation, the
+    # keyboard, the mouse, the ui and the sound modules, with a fake host that
+    # fills its view and records the handlers.
+    add_executable(menu-test
+        ${CMAKE_SOURCE_DIR}/tests/menu.c
+        ${CMAKE_SOURCE_DIR}/src/studio/screens/menu.c
+        ${CMAKE_SOURCE_DIR}/src/studio/anim.c
+        ${CMAKE_SOURCE_DIR}/src/studio/keyboard.c
+        ${CMAKE_SOURCE_DIR}/src/studio/mouse.c
+        ${CMAKE_SOURCE_DIR}/src/studio/ui.c
+        ${CMAKE_SOURCE_DIR}/src/studio/sound.c
+    )
+
+    target_include_directories(menu-test PRIVATE ${CMAKE_BINARY_DIR})
+    target_link_libraries(menu-test PRIVATE tic80core)
+    tic80_add_test(menu-test)
+
+    # The pause/options screen links without the studio: the screen, the menu
+    # widget and the modules they link, with a fake host that records the
+    # callbacks and stubs for the system calls it reaches. Built as the editors
+    # flavour, so CLOSE GAME and its exit are covered as they ship.
+    add_executable(mainmenu-test
+        ${CMAKE_SOURCE_DIR}/tests/mainmenu.c
+        ${CMAKE_SOURCE_DIR}/src/studio/screens/mainmenu.c
+        ${CMAKE_SOURCE_DIR}/src/studio/screens/menu.c
+        ${CMAKE_SOURCE_DIR}/src/studio/anim.c
+        ${CMAKE_SOURCE_DIR}/src/studio/keyboard.c
+        ${CMAKE_SOURCE_DIR}/src/studio/mouse.c
+        ${CMAKE_SOURCE_DIR}/src/studio/ui.c
+        ${CMAKE_SOURCE_DIR}/src/studio/sound.c
+    )
+
+    target_compile_definitions(mainmenu-test PRIVATE BUILD_EDITORS)
+    target_include_directories(mainmenu-test PRIVATE ${CMAKE_BINARY_DIR})
+    target_link_libraries(mainmenu-test PRIVATE tic80core)
+    tic80_add_test(mainmenu-test)
+
+    # The browser links without the studio: the screen, the menu widget, the
+    # animation, the filesystem and the sound modules, a fake net that holds
+    # its requests, a filesystem on a temporary root and a fake host that
+    # records the actions. Built with BUILD_SURF, as the screen ships.
+    add_executable(surf-test
+        ${CMAKE_SOURCE_DIR}/tests/surf.c
+        ${CMAKE_SOURCE_DIR}/src/studio/screens/surf.c
+        ${CMAKE_SOURCE_DIR}/src/studio/screens/menu.c
+        ${CMAKE_SOURCE_DIR}/src/studio/anim.c
+        ${CMAKE_SOURCE_DIR}/src/studio/fs.c
+        ${CMAKE_SOURCE_DIR}/src/studio/keyboard.c
+        ${CMAKE_SOURCE_DIR}/src/studio/mouse.c
+        ${CMAKE_SOURCE_DIR}/src/studio/ui.c
+        ${CMAKE_SOURCE_DIR}/src/studio/sound.c
+        ${CMAKE_SOURCE_DIR}/src/ext/json.c
+    )
+
+    # The mode machine links without the studio: the door's decisions and the
+    # ESC rule, over a state value — no machine, no window, no screen. Built
+    # as the editors-and-browser flavour, the one the app ships.
+    add_executable(modes-test
+        ${CMAKE_SOURCE_DIR}/tests/modes.c
+        ${CMAKE_SOURCE_DIR}/src/studio/modes.c
+    )
+
+    target_compile_definitions(modes-test PRIVATE BUILD_EDITORS BUILD_SURF)
+    target_include_directories(modes-test PRIVATE ${CMAKE_BINARY_DIR})
+    target_link_libraries(modes-test PRIVATE tic80core)
+    tic80_add_test(modes-test)
+
+    # The same unit without the browser: the close rule's other branch and the
+    # modes a build without it never has.
+    add_executable(modes-test-nosurf
+        ${CMAKE_SOURCE_DIR}/tests/modes.c
+        ${CMAKE_SOURCE_DIR}/src/studio/modes.c
+    )
+
+    target_compile_definitions(modes-test-nosurf PRIVATE BUILD_EDITORS)
+    target_include_directories(modes-test-nosurf PRIVATE ${CMAKE_BINARY_DIR})
+    target_link_libraries(modes-test-nosurf PRIVATE tic80core)
+    tic80_add_test(modes-test-nosurf)
+
+    # The game runner links without the studio: the runner and the core over a
+    # filesystem on a temporary root, with a fake host that records the end,
+    # the exit, the error and the trace.
+    add_executable(run-test
+        ${CMAKE_SOURCE_DIR}/tests/run.c
+        ${CMAKE_SOURCE_DIR}/src/studio/screens/run.c
+        ${CMAKE_SOURCE_DIR}/src/studio/fs.c
+        ${CMAKE_SOURCE_DIR}/src/ext/json.c
+        ${CMAKE_SOURCE_DIR}/src/ext/md5.c
+    )
+
+    target_include_directories(run-test PRIVATE ${CMAKE_BINARY_DIR} ${THIRDPARTY_DIR}/jsmn)
+    target_link_libraries(run-test PRIVATE tic80core zip)
+    tic80_add_test(run-test)
+
+    target_compile_definitions(surf-test PRIVATE BUILD_SURF)
+    target_include_directories(surf-test PRIVATE ${CMAKE_BINARY_DIR} ${THIRDPARTY_DIR}/jsmn)
+    target_link_libraries(surf-test PRIVATE tic80core zip)
+    tic80_add_test(surf-test)
+
+    add_executable(code-text-test ${CODE_TEXT_TEST_SRC})
+    tic80_add_test(code-text-test)
+
+    add_executable(code-text-test-pro ${CODE_TEXT_TEST_SRC})
+    target_compile_definitions(code-text-test-pro PRIVATE TIC80_PRO)
+    tic80_add_test(code-text-test-pro)
+
+    # The export command builder links with the core alone: no studio.c, no
+    # editor and no screen. The PRO target compiles the same source with
+    # TIC80_PRO, so both shapes of the command are pinned.
+    set(EXPORT_TEST_SRC
+        ${CMAKE_SOURCE_DIR}/tests/export.c
+        ${CMAKE_SOURCE_DIR}/src/studio/export.c
+    )
+
+    add_executable(export-test ${EXPORT_TEST_SRC})
+    target_link_libraries(export-test PRIVATE tic80core)
+    tic80_add_test(export-test)
+
+    add_executable(export-test-pro ${EXPORT_TEST_SRC})
+    target_compile_definitions(export-test-pro PRIVATE TIC80_PRO)
+    target_link_libraries(export-test-pro PRIVATE tic80core)
+    tic80_add_test(export-test-pro)
 
     # The FFT module, driven offline by both tests. They build its sources
     # rather than linking the core, because the stubs variant below has to

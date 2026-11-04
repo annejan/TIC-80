@@ -18,6 +18,7 @@ build/uwp/tic/BundleArtifacts/
 build/android/gen/
 build/android/libs/
 build/android/obj/
+build/android-sokol/*.apk
 build/itch.io/tic.js
 build/itch.io/console.zip
 build/uwp/code8/ARM/
@@ -196,10 +197,6 @@ build/*.map
 # 3ds files
 *.3dsx
 *.smdh
-# the Forth dictionary bootstrap cmake/forth.cmake builds under the build
-# directory to generate pfdicdat.h
-build/pforth_bootstrap/
-build/pforth_bootstrap_src/
 # local tooling, not part of the project
 .claude/
 openspec/

@@ -107,12 +107,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/stubs"
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript gravity)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
           for lang in "${langs[@]}"; do
             # Every language flag on every pass, so nothing can stick in the
             # cache from the previous one — which is what the --fresh here used
             # to buy, at the price of throwing SDL2 and the whole engine away
-            # fourteen times over. Without it a pass rebuilds only what its
+            # fifteen times over. Without it a pass rebuilds only what its
             # language actually changed (measured on this tree: 44 build steps
             # against 390 for a full one). BUILD_PRO is spelled out because the
             # Build Pro step above leaves it on in this same build directory.
@@ -262,12 +262,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/stubs"
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript gravity)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
           for lang in "${langs[@]}"; do
             # Every language flag on every pass, so nothing can stick in the
             # cache from the previous one — which is what the --fresh here used
             # to buy, at the price of throwing SDL2 and the whole engine away
-            # fourteen times over. Without it a pass rebuilds only what its
+            # fifteen times over. Without it a pass rebuilds only what its
             # language actually changed (measured on this tree: 44 build steps
             # against 390 for a full one). BUILD_PRO is spelled out because the
             # Build Pro step above leaves it on in this same build directory.
@@ -416,12 +416,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/stubs"
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript gravity)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
           for lang in "${langs[@]}"; do
             # Every language flag on every pass, so nothing can stick in the
             # cache from the previous one — which is what the --fresh here used
             # to buy, at the price of throwing SDL2 and the whole engine away
-            # fourteen times over. Without it a pass rebuilds only what its
+            # fifteen times over. Without it a pass rebuilds only what its
             # language actually changed (measured on this tree: 44 build steps
             # against 390 for a full one). BUILD_PRO is spelled out because the
             # Build Pro step above leaves it on in this same build directory.
@@ -536,7 +536,8 @@ jobs:
   # === Nintendo 3DS build ===
 
   nintendo-3ds:
-    runs-on: ubuntu-latest
+    # 24.04, not -latest: the label moves to 26.04 (runner-images#14748).
+    runs-on: ubuntu-24.04
     container: devkitpro/devkitarm:20250728
 
     steps:
@@ -566,7 +567,8 @@ jobs:
 
   # === Nintendo Switch build ===
   nintendo-switch:
-    runs-on: ubuntu-latest
+    # 24.04, not -latest: the label moves to 26.04 (runner-images#14748).
+    runs-on: ubuntu-24.04
     container: devkitpro/devkita64:20250728
 
     steps:
@@ -595,9 +597,9 @@ jobs:
           name: "tic80-nintendo-switch"
           path: build/bin/tic80.nro
 
-  # === MacOS 14 / arm64 ===
+  # === MacOS 15 / arm64 ===
   macos-arm64:
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_MAXSIZE: 500M
@@ -681,12 +683,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/stubs"
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript gravity)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
           for lang in "${langs[@]}"; do
             # Every language flag on every pass, so nothing can stick in the
             # cache from the previous one — which is what the --fresh here used
             # to buy, at the price of throwing SDL2 and the whole engine away
-            # fourteen times over. Without it a pass rebuilds only what its
+            # fifteen times over. Without it a pass rebuilds only what its
             # language actually changed (measured on this tree: 44 build steps
             # against 390 for a full one). BUILD_PRO is spelled out because the
             # Build Pro step above leaves it on in this same build directory.
@@ -824,12 +826,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/stubs"
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript gravity)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
           for lang in "${langs[@]}"; do
             # Every language flag on every pass, so nothing can stick in the
             # cache from the previous one — which is what the --fresh here used
             # to buy, at the price of throwing SDL2 and the whole engine away
-            # fourteen times over. Without it a pass rebuilds only what its
+            # fifteen times over. Without it a pass rebuilds only what its
             # language actually changed (measured on this tree: 44 build steps
             # against 390 for a full one). BUILD_PRO is spelled out because the
             # Build Pro step above leaves it on in this same build directory.
@@ -957,7 +959,7 @@ jobs:
             build/bin/tic80
 
   sdl-macos:
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_MAXSIZE: 500M
@@ -1109,6 +1111,129 @@ jobs:
           name: "tic80-android-surf"
           path: build/android/tic80-surf.apk
 
+  # === Android (sokol) ===
+  android-sokol:
+    # As the android job: setup-ruby has no 2.6.10 for 26.04 (#3107).
+    runs-on: ubuntu-24.04
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 500M
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 2.6
+
+      - name: set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "build-tools;35.0.0 platforms;android-31 ndk;30.0.16248370"
+
+      - name: Install ccache
+        run: command -v ccache >/dev/null || { sudo apt-get update && sudo apt-get install -y ccache; }
+
+      - name: ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ github.job }}-${{ runner.arch }}-${{ github.sha }}
+          restore-keys: ccache-${{ github.job }}-${{ runner.arch }}-
+
+      - name: Build
+        env:
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          export ANDROID_NDK="$ANDROID_HOME/ndk/30.0.16248370"
+
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.pull_request.head.repo.fork }}" = "true" ]; then
+              export UNSIGNED=1
+              echo "fork pull request: no repository secrets, the APKs are unsigned"
+          else
+              : "${RELEASE_STORE_PASSWORD:?RELEASE_STORE_PASSWORD secret is not set}"
+              : "${RELEASE_KEY_PASSWORD:?RELEASE_KEY_PASSWORD secret is not set}"
+          fi
+
+          common=(-DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK/build/cmake/android.toolchain.cmake"
+                  -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26
+                  -DCMAKE_BUILD_TYPE=Release
+                  -DBUILD_SOKOL=ON -DBUILD_SDL=OFF
+                  -DBUILD_WITH_ALL=ON -DBUILD_TOUCH_INPUT=ON
+                  -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
+
+          cmake -S . -B build-android -G Ninja "${common[@]}"
+          cmake --build build-android --parallel
+          build/android-sokol/apk.sh build-android/bin/libtic80.so build/android-sokol/tic80.apk
+
+          cmake -S . -B build-android-surf -G Ninja "${common[@]}" -DBUILD_EDITORS=OFF -DBUILD_SURF=ON
+          cmake --build build-android-surf --parallel
+          build/android-sokol/apk.sh build-android-surf/bin/libtic80.so build/android-sokol/tic80-surf.apk com.nesbox.tic.surf
+
+      - name: Check what each APK carries
+        run: |
+          TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
+
+          unzip -p build/android-sokol/tic80.apk lib/arm64-v8a/libtic80.so > editors.so
+          unzip -p build/android-sokol/tic80-surf.apk lib/arm64-v8a/libtic80.so > surf.so
+
+          grep -qa "SPRITE EDITOR" editors.so || {
+            echo "the APK has no editors — BUILD_EDITORS did not take" >&2
+            exit 1
+          }
+          grep -qa "You don't have any files" surf.so || {
+            echo "the browser-only APK has no browser — BUILD_EDITORS=OFF did not take" >&2
+            exit 1
+          }
+          grep -qa "SPRITE EDITOR" surf.so && {
+            echo "the browser-only APK carries the editors" >&2
+            exit 1
+          }
+
+          for apk in tic80 tic80-surf; do
+            unzip -l "build/android-sokol/$apk.apk" | grep -q "classes.dex" && {
+              echo "$apk carries a dex; the sokol APK is native only" >&2
+              exit 1
+            }
+            "$TOOLS/aapt2" dump badging "build/android-sokol/$apk.apk" | grep "^package:"
+          done
+
+          "$TOOLS/aapt2" dump badging build/android-sokol/tic80.apk | grep -q "package: name='com.nesbox.tic'" || {
+            echo "the editors APK has the wrong package id" >&2
+            exit 1
+          }
+          "$TOOLS/aapt2" dump badging build/android-sokol/tic80-surf.apk | grep -q "package: name='com.nesbox.tic.surf'" || {
+            echo "the browser-only APK has the wrong package id" >&2
+            exit 1
+          }
+          "$TOOLS/aapt2" dump badging build/android-sokol/tic80.apk | grep -q "minSdkVersion:'26'" || {
+            echo "the APK's minSdk is not 26" >&2
+            exit 1
+          }
+
+      - name: Deploy
+        uses: actions/upload-artifact@v6
+        with:
+          if-no-files-found: error
+          name: "tic80-android-sokol"
+          path: build/android-sokol/tic80.apk
+
+      - name: Deploy the browser-only APK
+        uses: actions/upload-artifact@v6
+        with:
+          if-no-files-found: error
+          name: "tic80-android-sokol-surf"
+          path: build/android-sokol/tic80-surf.apk
+
   # === HTML ===
   html:
     # As the android job: setup-ruby has no 2.6.10 for 26.04 (#3107).
@@ -1170,7 +1295,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript gravity)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
           stage="$GITHUB_WORKSPACE/build/players"
           rm -rf "$stage"
           for lang in "${langs[@]}"; do
@@ -1181,7 +1306,7 @@ jobs:
             done
             cd "$GITHUB_WORKSPACE/build"
             # "Build all"'s flags with one language on: the site's player is
-            # that build, thirteen runtimes lighter.
+            # that build, fourteen runtimes lighter.
             emcmake cmake -G Ninja -DBUILD_TOUCH_INPUT=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_EDITORS=ON "${flags[@]}" -DTIC80_TARGET="tic80$lang" ..
             cmake --build . --parallel
             for f in "bin/tic80$lang.js" "bin/tic80$lang.wasm"; do
@@ -1207,7 +1332,7 @@ jobs:
           # back the same way: the SDL layer's "Unable to initialize SDL Video"
           # is in a build of it and in no build of the sokol layer, which is
           # what these three passes now build.
-          files=("$stage"/{lua,ruby,js,moon,yue,fennel,scheme,squirrel,wren,wasm,janet,python,miniscript,gravity}/tic80*.wasm)
+          files=("$stage"/{lua,ruby,js,moon,yue,fennel,scheme,squirrel,wren,wasm,janet,python,miniscript,forth,gravity}/tic80*.wasm)
           for f in "${files[@]}"; do
             if ! grep -qa "SPRITE EDITOR" "$f"; then
               echo "player without editors: $f — BUILD_EDITORS=ON did not take" >&2
@@ -1228,10 +1353,10 @@ jobs:
           done
           echo "checked ${#files[@]} wasm players, all distinct, all with editors"
 
-      # The fourteen per-language stubs the PRO alone export downloads — the
+      # The fifteen per-language stubs the PRO alone export downloads — the
       # same work as the native jobs' loop, in one directory: no --fresh
       # between the builds, so the system layer and whatever a language does
-      # not touch are compiled once (fifteen full builds used to run here, one
+      # not touch are compiled once (sixteen full builds used to run here, one
       # per language plus the one below). Every language flag is spelled out on
       # every pass, which is what --fresh used to buy, and it also clears the
       # BUILD_WITH_ALL the "Build all" step leaves on when the order is
@@ -1249,7 +1374,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript gravity)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
           for lang in "${langs[@]}"; do
             flags=(-DBUILD_WITH_ALL=OFF)
             for l in "${langs[@]}"; do
@@ -1263,8 +1388,8 @@ jobs:
 
           # An identical pair means a language flag did not take, the same guard
           # the native jobs run on their binaries: a wasm stub carries one
-          # runtime, so fourteen of them cannot be alike.
-          files=("$GITHUB_WORKSPACE"/build/bin/tic80{lua,ruby,js,moon,yue,fennel,scheme,squirrel,wren,wasm,janet,python,miniscript,gravity}.wasm)
+          # runtime, so fifteen of them cannot be alike.
+          files=("$GITHUB_WORKSPACE"/build/bin/tic80{lua,ruby,js,moon,yue,fennel,scheme,squirrel,wren,wasm,janet,python,miniscript,forth,gravity}.wasm)
           for f in "${files[@]}"; do
             if [ ! -f "$f" ]; then echo "missing stub: $f" >&2; exit 1; fi
           done
@@ -1310,6 +1435,8 @@ jobs:
           # cartridge (console.c onHtmlPageGet). A second, export-only page
           # used to exist and drifted from this one.
           cp html/index.html bin/index.html
+          # The Windows executable's icon doubles as the site's favicon:
+          cp windows/icon.ico bin/favicon.ico
           # The universal artifact is the one a stray SDL build would slip
           # through unnoticed — the per-language passes above check their own
           # sets, and this one carries the markers of neither set to compare.
@@ -1364,7 +1491,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript gravity)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
           stage="$GITHUB_WORKSPACE/build/players-webgpu"
           rm -rf "$stage"
           for lang in "${langs[@]}"; do
@@ -1404,7 +1531,7 @@ jobs:
         run: |
           set -euo pipefail
           stage="$GITHUB_WORKSPACE/build/players-webgpu"
-          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript gravity)
+          langs=(lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity)
           files=()
           for lang in "${langs[@]}"; do
             js="$stage/$lang/webgpu/tic80.js"

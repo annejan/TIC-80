@@ -22,12 +22,13 @@
 
 #include "studiomenu.h"
 #include "config.h"
+#include "export.h"
 #include "rom.h"
-#include "editors/code.h"
-#include "editors/sprite.h"
-#include "editors/map.h"
-#include "editors/music.h"
-#include "editors/sfx.h"
+#include "editors/code/code.h"
+#include "editors/sprite/sprite.h"
+#include "editors/map/map.h"
+#include "editors/music/music.h"
+#include "editors/sfx/sfx.h"
 #include "screens/console.h"
 
 #include <ctype.h>
@@ -123,6 +124,7 @@ enum
     CodeActionLineNumbers,
     CodeActionSidebar,
     CodeActionStatusbar,
+    CodeActionMinimap,
 };
 
 enum
@@ -152,6 +154,8 @@ enum
     SpriteActionBrush2,
     SpriteActionBrush3,
     SpriteActionBrush4,
+    SpriteActionSymmetryHorz,
+    SpriteActionSymmetryVert,
     SpriteActionPage1,
     SpriteActionPage2,
     SpriteActionPage3,
@@ -195,13 +199,12 @@ enum
 };
 
 // clang-format off
+#if defined(TIC80_PRO)
 enum
 {
-#define EXPORT_ENUM(name, label) Export_##name,
-    EXPORT_CMD_LIST(EXPORT_ENUM)
-#undef EXPORT_ENUM
-    ExportActionAlone,
+    ExportActionAlone = Export_Count,
 };
+#endif
 // clang-format on
 
 enum
@@ -242,6 +245,7 @@ static void menubarCodeAction(void* data, s32 id)
         case CodeActionLineNumbers: studioCodeViewToggle(studio, CodeViewLineNumbers); break;
         case CodeActionSidebar: studioCodeViewToggle(studio, CodeViewSidebar); break;
         case CodeActionStatusbar: studioCodeViewToggle(studio, CodeViewStatusbar); break;
+        case CodeActionMinimap: studioCodeViewToggle(studio, CodeViewMinimap); break;
     }
 }
 
@@ -317,6 +321,8 @@ static void menubarSpriteAction(void* data, s32 id)
         case SpriteActionBrush2: spriteSetBrushSize(sprite, 2); break;
         case SpriteActionBrush3: spriteSetBrushSize(sprite, 3); break;
         case SpriteActionBrush4: spriteSetBrushSize(sprite, 4); break;
+        case SpriteActionSymmetryHorz: sprite->brush.symmetryHorizontal = !sprite->brush.symmetryHorizontal; break;
+        case SpriteActionSymmetryVert: sprite->brush.symmetryVertical = !sprite->brush.symmetryVertical; break;
 
         case SpriteActionPage1: spriteSelectPage(sprite, 0); break;
         case SpriteActionPage2: spriteSelectPage(sprite, 1); break;
@@ -394,185 +400,33 @@ static void menubarMusicAction(void* data, s32 id)
 static bool ExportAlone;
 #endif
 
-static const char* const ExportTypes[] =
-    {
-#define EXPORT_TYPE(name, label) #name,
-        EXPORT_CMD_LIST(EXPORT_TYPE)
-#undef EXPORT_TYPE
-};
-
-static const char* exportSuffix(Studio* studio, s32 id, char* buffer, s32 size)
-{
-    switch(id)
-    {
-        case Export_win: return "-win";
-        case Export_linux: return "-linux";
-        case Export_linuxarm: return "-linuxarm";
-        case Export_mac: return "-macos";
-        case Export_macintel: return "-macintel";
-        case Export_html: return "-html";
-        case Export_tiles: return "-tiles";
-        case Export_sprites: return "-sprites";
-        case Export_map: return "-map";
-        case Export_mapimg: return "-map";
-        case Export_screen: return "-screen";
-
-        case Export_sfx:
-        {
-            Sfx* sfx = studiomenu_editor(studio, TIC_SFX_MODE);
-
-            snprintf(buffer, size, "-sfx-%02i", sfx ? sfx->index : 0);
-            return buffer;
-        }
-
-        case Export_music:
-        {
-            Music* music = studiomenu_editor(studio, TIC_MUSIC_MODE);
-
-            snprintf(buffer, size, "-music-%02i", music ? music->track : 0);
-            return buffer;
-        }
-
-        default:
-            return "";
-    }
-}
-
-#if defined(TIC80_PRO)
-static s32 exportBank(Studio* studio, s32 id)
-{
-    switch(id)
-    {
-        case Export_tiles:
-        case Export_sprites:
-            return studiomenu_editor_bank(studio, TIC_SPRITE_MODE);
-
-        case Export_map:
-        case Export_mapimg:
-        case Export_screen:
-            return studiomenu_editor_bank(studio, TIC_MAP_MODE);
-
-        case Export_music:
-            return studiomenu_editor_bank(studio, TIC_MUSIC_MODE);
-
-        default:
-            return 0;
-    }
-}
-#endif
-
-static s32 exportIndex(Studio* studio, s32 id)
-{
-    switch(id)
-    {
-        case Export_sfx:
-        {
-            Sfx* sfx = studiomenu_editor(studio, TIC_SFX_MODE);
-            return sfx ? sfx->index : 0;
-        }
-
-        case Export_music:
-        {
-            Music* music = studiomenu_editor(studio, TIC_MUSIC_MODE);
-            return music ? music->track : 0;
-        }
-
-        default:
-            return -1;
-    }
-}
-
-static s32 exportVbank(Studio* studio)
-{
-    Sprite* sprite = studiomenu_editor(studio, TIC_SPRITE_MODE);
-
-    return sprite && sprite->palette.vbank1 ? 1 : 0;
-}
-
 static void menubarExport(void* data, s32 id)
 {
     StudioMenuContext* ctx = data;
     Studio* studio = ctx->studio;
 
-    if(id < 0 || id >= (s32)COUNT_OF(ExportTypes))
-        return;
+    Sfx* sfx = studiomenu_editor(studio, TIC_SFX_MODE);
+    Music* music = studiomenu_editor(studio, TIC_MUSIC_MODE);
+    Sprite* sprite = studiomenu_editor(studio, TIC_SPRITE_MODE);
 
-    char suffix[16];
-    char filename[TICNAME_MAX + 16];
-
-    if(id == Export_help)
-        snprintf(filename, sizeof filename, "tic80-help");
-    else
-    {
-        const CartName* cart = studioCart(studio);
-        const char* base = cart->name[0] && !strchr(cart->name, ' ') ? cart->name : "game";
-
-        snprintf(filename, sizeof filename, "%s%s", base, exportSuffix(studio, id, suffix, sizeof suffix));
-    }
+    const ExportState state =
+        {
+            .cartName = studioCart(studio)->name,
+            .sfx = sfx ? sfx->index : 0,
+            .music = music ? music->track : 0,
+            .spriteVbank1 = sprite && sprite->palette.vbank1,
+#if defined(TIC80_PRO)
+            .alone = ExportAlone,
+            .spriteBank = studiomenu_editor_bank(studio, TIC_SPRITE_MODE),
+            .mapBank = studiomenu_editor_bank(studio, TIC_MAP_MODE),
+            .musicBank = studiomenu_editor_bank(studio, TIC_MUSIC_MODE),
+#endif
+        };
 
     char command[TICNAME_MAX + 64];
-    s32 length = snprintf(command, sizeof command, "export %s %s", ExportTypes[id], filename);
 
-    if(length < 0 || (size_t)length >= sizeof command)
-        return;
-
-    switch(id)
-    {
-        case Export_tiles:
-        case Export_sprites:
-        case Export_map:
-        case Export_mapimg:
-#if defined(TIC80_PRO)
-            length += snprintf(command + length, sizeof command - (size_t)length,
-                               " bank=%i", exportBank(studio, id));
-#endif
-            break;
-
-        case Export_screen:
-#if defined(TIC80_PRO)
-            length += snprintf(command + length, sizeof command - (size_t)length,
-                               " bank=%i", exportBank(studio, id));
-#endif
-            length += snprintf(command + length, sizeof command - (size_t)length,
-                               " vbank=%i", exportVbank(studio));
-            break;
-
-        case Export_sfx:
-            length += snprintf(command + length, sizeof command - (size_t)length,
-                               " id=%i", exportIndex(studio, id));
-            break;
-
-        case Export_music:
-            length += snprintf(command + length, sizeof command - (size_t)length,
-                               " id=%i", exportIndex(studio, id));
-#if defined(TIC80_PRO)
-            length += snprintf(command + length, sizeof command - (size_t)length,
-                               " bank=%i", exportBank(studio, id));
-#endif
-            break;
-
-        default:
-            break;
-    }
-
-#if defined(TIC80_PRO)
-    if(ExportAlone)
-        switch(id)
-        {
-            case Export_win:
-            case Export_linux:
-            case Export_linuxarm:
-            case Export_mac:
-            case Export_macintel:
-                snprintf(command + length, sizeof command - (size_t)length, " alone=1");
-                break;
-
-            default:
-                break;
-        }
-#endif
-
-    studiomenu_command(studio, command);
+    if(export_command(command, sizeof command, id, &state))
+        studiomenu_command(studio, command);
 }
 
 #if defined(TIC80_PRO)
@@ -851,7 +705,9 @@ static MenuBarItem MenubarOptions[] =
 #if defined(CRT_SHADER_SUPPORT)
         MENU_TOGGLE("CRT MONITOR", "F6", menubarOption, OptionCrt),
 #endif
+#if !defined(__ANDROID__)
         MENU_TOGGLE("FULLSCREEN", "F11", menubarOption, OptionFullscreen),
+#endif
         MENU_TOGGLE("INTEGER SCALE", NULL, menubarOption, OptionIntegerScale),
         MENU_TOGGLE("AUTOHIDE MENU", NULL, menubarOption, OptionAutohide),
         MENU_TOGGLE("COMPACT BAR", NULL, menubarOption, OptionCompact),
@@ -898,6 +754,7 @@ static MenuBarItem MenubarCodeApp[] =
         MENU_TOGGLE_ICON("LINES", "ALT+L", menubarCodeAction, CodeActionLineNumbers, tic_icon_line_numbers),
         MENU_TOGGLE("SIDEBAR", NULL, menubarCodeAction, CodeActionSidebar),
         MENU_TOGGLE("STATUSBAR", NULL, menubarCodeAction, CodeActionStatusbar),
+        MENU_TOGGLE("MINIMAP", NULL, menubarCodeAction, CodeActionMinimap),
         MENU_SEPARATOR,
         MENU_SUBMENU("OPTIONS", &MenubarEditorMenu),
 };
@@ -937,6 +794,9 @@ static MenuBarItem MenubarBrushSize[] =
         MENU_TOGGLE("2x2", NULL, menubarSpriteAction, SpriteActionBrush2),
         MENU_TOGGLE("3x3", NULL, menubarSpriteAction, SpriteActionBrush3),
         MENU_TOGGLE("4x4", NULL, menubarSpriteAction, SpriteActionBrush4),
+        MENU_SEPARATOR,
+        MENU_TOGGLE("HORZ SYMM", "H", menubarSpriteAction, SpriteActionSymmetryHorz),
+        MENU_TOGGLE("VERT SYMM", "V", menubarSpriteAction, SpriteActionSymmetryVert),
 };
 
 static const MenuBarCategory MenubarBrushSizeMenu = MENU_CATEGORY("BRUSH", MenubarBrushSize);
@@ -1347,6 +1207,7 @@ void studiomenu_sync_editor(Studio* studio, Menubar* bar, EditorMode mode, void*
             menubarCheck(MenubarCodeApp, COUNT_OF(MenubarCodeApp), CodeActionLineNumbers, code->lineNumbers && code->showGutter);
             menubarCheck(MenubarCodeApp, COUNT_OF(MenubarCodeApp), CodeActionSidebar, code->showGutter);
             menubarCheck(MenubarCodeApp, COUNT_OF(MenubarCodeApp), CodeActionStatusbar, code->showStatusbar);
+            menubarCheck(MenubarCodeApp, COUNT_OF(MenubarCodeApp), CodeActionMinimap, code->showMinimap);
 
             items = MenubarCodeApp;
             count = COUNT_OF(MenubarCodeApp);
@@ -1396,15 +1257,17 @@ void studiomenu_sync_editor(Studio* studio, Menubar* bar, EditorMode mode, void*
                                  memcmp(&PalettePresets[i].palette, palette, sizeof(tic_palette)) == 0);
             }
 
-            menubarCheck(MenubarCanvasSize, COUNT_OF(MenubarCanvasSize), SpriteActionSize8, sprite->size == 8);
-            menubarCheck(MenubarCanvasSize, COUNT_OF(MenubarCanvasSize), SpriteActionSize16, sprite->size == 16);
-            menubarCheck(MenubarCanvasSize, COUNT_OF(MenubarCanvasSize), SpriteActionSize32, sprite->size == 32);
-            menubarCheck(MenubarCanvasSize, COUNT_OF(MenubarCanvasSize), SpriteActionSize64, sprite->size == 64);
+            menubarCheck(MenubarCanvasSize, COUNT_OF(MenubarCanvasSize), SpriteActionSize8, sprite->canvasSize == 8);
+            menubarCheck(MenubarCanvasSize, COUNT_OF(MenubarCanvasSize), SpriteActionSize16, sprite->canvasSize == 16);
+            menubarCheck(MenubarCanvasSize, COUNT_OF(MenubarCanvasSize), SpriteActionSize32, sprite->canvasSize == 32);
+            menubarCheck(MenubarCanvasSize, COUNT_OF(MenubarCanvasSize), SpriteActionSize64, sprite->canvasSize == 64);
 
-            menubarCheck(MenubarBrushSize, COUNT_OF(MenubarBrushSize), SpriteActionBrush1, sprite->brushSize == 1);
-            menubarCheck(MenubarBrushSize, COUNT_OF(MenubarBrushSize), SpriteActionBrush2, sprite->brushSize == 2);
-            menubarCheck(MenubarBrushSize, COUNT_OF(MenubarBrushSize), SpriteActionBrush3, sprite->brushSize == 3);
-            menubarCheck(MenubarBrushSize, COUNT_OF(MenubarBrushSize), SpriteActionBrush4, sprite->brushSize == 4);
+            menubarCheck(MenubarBrushSize, COUNT_OF(MenubarBrushSize), SpriteActionBrush1, sprite->brush.size == 1);
+            menubarCheck(MenubarBrushSize, COUNT_OF(MenubarBrushSize), SpriteActionBrush2, sprite->brush.size == 2);
+            menubarCheck(MenubarBrushSize, COUNT_OF(MenubarBrushSize), SpriteActionBrush3, sprite->brush.size == 3);
+            menubarCheck(MenubarBrushSize, COUNT_OF(MenubarBrushSize), SpriteActionBrush4, sprite->brush.size == 4);
+            menubarCheck(MenubarBrushSize, COUNT_OF(MenubarBrushSize), SpriteActionSymmetryHorz, sprite->brush.symmetryHorizontal);
+            menubarCheck(MenubarBrushSize, COUNT_OF(MenubarBrushSize), SpriteActionSymmetryVert, sprite->brush.symmetryVertical);
 
             {
                 static const s32 Pages[] = {SpriteActionPage1, SpriteActionPage2, SpriteActionPage3, SpriteActionPage4};

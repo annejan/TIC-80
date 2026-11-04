@@ -22,14 +22,52 @@
 
 #pragma once
 
-#include "studio/studio.h"
+#include "tic.h"
 #include "tilesheet.h"
+#include "studio/anim.h"
+#include "studio/clipboard.h"
+#include "studio/keyboard.h"
+#include "studio/mouse.h"
 
 typedef struct Sprite Sprite;
 
+// What the host gives the editor once: the machine, the pointer states and the
+// tooltip ask.
+typedef struct
+{
+    void* host;
+    tic_mem* tic;
+    MouseState* mouse;
+
+    void (*tooltip)(void* host, const char* text);
+
+} SpriteDeps;
+
+// The frame: the bar's flags, the cart's bank0 tiles and palette, and the
+// current sprite bank's palettes and flags.
+typedef struct
+{
+    struct
+    {
+        bool captured;
+        bool pointerOwned;
+        ClipboardEvent clipboard;
+
+    } frame;
+
+    const tic_tiles* cartTiles;
+    const tic_palette* cartPalette;
+    tic_palette* vbank0;
+    tic_palette* vbank1;
+    tic_flags* flags;
+
+} SpriteView;
+
 struct Sprite
 {
-    Studio* studio;
+    SpriteDeps deps;
+    const SpriteView* view;
+
     tic_mem* tic;
 
     tic_tiles* src;
@@ -40,18 +78,24 @@ struct Sprite
     struct
     {
         bool start;
-        tic_point last;
+        tic_point lastPos; // brush cell on the canvas, or -1 if none
     } draw;
 
     u16 index;
     u8 color;
     u8 color2;
-    u8 size;
-    u8 brushSize;
-    u16 x, y;
+    u8 canvasSize;
+    tic_point spritePos;
     bool hexindex;
 
     tic_blit blit;
+
+    struct
+    {
+        u8 size;
+        bool symmetryHorizontal;
+        bool symmetryVertical;
+    } brush;
 
     struct
     {
@@ -86,6 +130,7 @@ struct Sprite
     } mode;
 
     struct History* history;
+    bool needsHistoryUpdate;
 
     struct
     {
@@ -102,10 +147,9 @@ struct Sprite
         Movie page;
 
     } anim;
-
-    void (*tick)(Sprite*);
-    void (*scanline)(tic_mem* tic, s32 row, void* data);
 };
+
+typedef void (*SpritePaintPixel)(Sprite*, s32 x, s32 y, u8 color);
 
 typedef struct
 {
@@ -114,8 +158,12 @@ typedef struct
 
 extern const ClipboardOps SpriteClipboard;
 
-void initSprite(Sprite*, Studio* studio, tic_tiles* src);
+void initSprite(Sprite*, const SpriteDeps*, tic_tiles* src);
+void sprite_set_view(Sprite*, const SpriteView*);
+void sprite_tick(Sprite*);
+void sprite_scanline(tic_mem* tic, s32 row, void* data);
 void freeSprite(Sprite*);
+
 enum
 {
     SPRITE_TOOL_FLIP_HORZ,

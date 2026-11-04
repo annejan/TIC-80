@@ -34,9 +34,14 @@
 #include "defines.h"
 #include "tools.h"
 #include "system.h"
+#include "paths.h"
 #include "rom.h"
 #include "anim.h"
 #include "keyboard.h"
+#include "vimode.h"
+#include "layout.h"
+#include "clipboard.h"
+#include "icons.h"
 #include "ext/png.h"
 #include "core/core.h"
 
@@ -61,31 +66,6 @@
 #define tic_api_spr(tic, ...)   (((tic_core*)(tic))->api.spr(tic, __VA_ARGS__))
 #define tic_api_map(tic, ...)   (((tic_core*)(tic))->api.map(tic, __VA_ARGS__))
 #endif
-
-#ifdef BAREMETALPI
-#define TIC_LOCAL "../.tic80/"
-#elif defined(__SWITCH__)
-#define TIC_LOCAL "./data/"
-#else
-#define TIC_LOCAL ".local/"
-#endif
-#define TIC_LOCAL_VERSION TIC_LOCAL TIC_VERSION_HASH "/"
-#define TIC_CACHE         TIC_LOCAL "cache/"
-
-#define STUDIO_BAR_HEIGHT         7
-#define STUDIO_TEXT_WIDTH         (TIC_FONT_WIDTH)
-#define STUDIO_TEXT_HEIGHT        (TIC_FONT_HEIGHT + 1)
-#define STUDIO_TEXT_BUFFER_WIDTH  (TIC80_WIDTH / STUDIO_TEXT_WIDTH)
-#define STUDIO_TEXT_BUFFER_HEIGHT (TIC80_HEIGHT / STUDIO_TEXT_HEIGHT)
-#define STUDIO_TEXT_BUFFER_SIZE   (STUDIO_TEXT_BUFFER_WIDTH * STUDIO_TEXT_BUFFER_HEIGHT)
-#define STUDIO_ANIM_TIME          8
-
-#define TIC_COLOR_BG tic_color_black
-
-#define CONFIG_TIC      "config.tic"
-#define CONFIG_TIC_PATH TIC_LOCAL_VERSION CONFIG_TIC
-
-#define PNG_EXT ".png"
 
 #if defined(CRT_SHADER_SUPPORT)
 // clang-format off
@@ -184,88 +164,6 @@ typedef enum
     RUN_FROM_PLAYER,
 } RunOrigin;
 
-typedef enum
-{
-    VI_NORMAL,
-    VI_INSERT,
-    VI_SELECT,
-    VI_SEEK,
-    VI_SEEK_BACK,
-} ViMode;
-
-enum
-{
-    tic_icon_cut = 80,
-    tic_icon_copy = 81,
-    tic_icon_paste = 82,
-    tic_icon_undo = 83,
-    tic_icon_redo = 84,
-    tic_icon_bank = 85,
-    tic_icon_tab = 87,
-    tic_icon_code = 88,
-    tic_icon_sprite = 89,
-    tic_icon_map = 90,
-    tic_icon_sfx = 91,
-    tic_icon_music = 92,
-    tic_icon_rec = 93,
-    tic_icon_rec2 = 94,
-    tic_icon_bookmark = 95,
-    tic_icon_shadow = 96,
-    tic_icon_hand = 99,
-    tic_icon_find = 100,
-    tic_icon_goto = 101,
-    tic_icon_outline = 102,
-    tic_icon_world = 103,
-    tic_icon_grid = 104,
-    tic_icon_down = 105,
-    tic_icon_up = 106,
-    tic_icon_fill = 107,
-    tic_icon_select = 108,
-    tic_icon_pen = 109,
-    tic_icon_tiles = 110,
-    tic_icon_sprites = 111,
-    tic_icon_left = 112,
-    tic_icon_right = 113,
-    tic_icon_piano = 114,
-    tic_icon_tracker = 115,
-    tic_icon_follow = 116,
-    tic_icon_sustain = 117,
-    tic_icon_playnow = 118,
-    tic_icon_playframe = 119,
-    tic_icon_stop = 120,
-    tic_icon_rgb = 121,
-    tic_icon_tinyleft = 122,
-    tic_icon_pos = 123,
-    tic_icon_tinyright = 124,
-    tic_icon_bigup = 125,
-    tic_icon_bigdown = 126,
-    tic_icon_bigleft = 127,
-    tic_icon_bigright = 128,
-    tic_icon_fliphorz = 129,
-    tic_icon_flipvert = 130,
-    tic_icon_rotate = 131,
-    tic_icon_erase = 132,
-    tic_icon_bigpen = 133,
-    tic_icon_bigpicker = 134,
-    tic_icon_bigselect = 135,
-    tic_icon_bigfill = 136,
-    tic_icon_loop = 137,
-    tic_icon_random = 138,
-    tic_icon_line_numbers = 139,
-    tic_icon_circle = 140,
-    tic_icon_more = 141,
-    tic_icon_tic80 = 142,
-    tic_icon_show_tiles = 143,
-    tic_icon_console = 144,
-    tic_icon_surf = 145,
-    tic_icon_game_menu = 146,
-    tic_icon_tinypicker = 147,
-    tic_icon_tinyfliphorz = 148,
-    tic_icon_tinyflipvert = 149,
-    tic_icon_tinyerase = 150,
-    tic_icon_tinyrotate = 151,
-};
-
 void setCursor(Studio* studio, tic_cursor id);
 
 bool checkMousePos(Studio* studio, const tic_rect* rect);
@@ -275,12 +173,10 @@ bool checkMouseDown(Studio* studio, const tic_rect* rect, tic_mouse_btn button);
 
 void drawBitIcon(Studio* studio, s32 id, s32 x, s32 y, u8 color);
 
-tic_cartridge* loadPngCart(png_buffer buffer);
 void studioRomLoaded(Studio* studio);
 void studioRomSaved(Studio* studio);
 void studioConfigChanged(Studio* studio);
 
-void setStudioMode(Studio* studio, EditorMode mode);
 EditorMode getStudioMode(Studio* studio);
 
 // Where CODE and MAP content starts: 0 with autohide, 7 otherwise.
@@ -290,21 +186,6 @@ void exitStudio(Studio* studio);
 void setStudioViMode(Studio* studio, ViMode mode);
 ViMode getStudioViMode(Studio* studio);
 bool checkStudioViMode(Studio* studio, ViMode mode);
-
-void toClipboard(const void* data, s32 size, bool flip);
-bool fromClipboard(void* data, s32 size, bool flip, bool remove_white_spaces, bool sameSize);
-
-// The five operations the Edit menu performs. Each editor supplies its own; a
-// mode with none leaves it NULL.
-typedef struct
-{
-    void (*cut)(void*);
-    void (*copy)(void*);
-    void (*paste)(void*);
-    void (*undo)(void*);
-    void (*redo)(void*);
-
-} ClipboardOps;
 
 ClipboardEvent getClipboardEvent(Studio* studio);
 
@@ -319,6 +200,15 @@ void playSystemSfx(Studio* studio, s32 id);
 bool studio_is_cart_loaded(Studio* studio);
 
 struct tic_fs* studio_fs(Studio* studio);
+
+CartName* studioCart(Studio* studio);
+void studioSetCartName(Studio* studio, const char* name, const char* path);
+
+bool studioLoadCart(Studio* studio, const char* path);
+void studioReloadCart(Studio* studio);
+void studioLoadByHash(Studio* studio, const char* name, const char* hash, const char* section, fs_done_callback callback, void* data);
+CartSaveResult studioSaveCart(Studio* studio, const char* name);
+CartSaveResult studioAutoSave(Studio* studio);
 
 void gotoMenu(Studio* studio);
 void gotoCode(Studio* studio);
@@ -357,12 +247,6 @@ const char* studioExportSfx(Studio* studio, s32 sfx, const char* filename);
 
 tic_mem* getMemory(Studio* studio);
 
-void sfx_stop(tic_mem* tic, s32 channel);
-s32 calcWaveAnimation(tic_mem* tic, u32 index, s32 channel);
-void map2ram(tic_ram* ram, const tic_map* src);
-void tiles2ram(tic_ram* ram, const tic_tiles* src);
-void fadePalette(tic_palette* pal, s32 value);
-
 #if defined(BUILD_EDITORS)
 
 // The code editor's view toggles, shared by the bar's menu and the editor's
@@ -374,9 +258,15 @@ typedef enum
     CodeViewLineNumbers,
     CodeViewSidebar,
     CodeViewStatusbar,
+    CodeViewMinimap,
 } CodeViewOption;
 
 void studioCodeViewToggle(Studio*, CodeViewOption);
+
+// The bar's frame: nothing typed reaches an editor while the bar owns the
+// keys, and the Escape that closed it is not seen either.
+bool studio_keys_captured(Studio* studio);
+bool studio_keys_escaped(Studio* studio);
 
 typedef struct
 {
@@ -409,7 +299,5 @@ typedef struct
     } battle;
 
 } Bytebattle;
-
-Bytebattle* getBytebattle(Studio* studio);
 
 #endif

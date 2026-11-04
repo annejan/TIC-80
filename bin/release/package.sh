@@ -111,6 +111,7 @@ mkdir -p "$tmp"
 pack_file "$ART/tic80-html/tic80.js" "$tmp/"
 pack_file "$ART/tic80-html/tic80.wasm" "$tmp/"
 pack_file "$ART/tic80-html/index.html" "$tmp/"
+pack_file "$ART/tic80-html/favicon.ico" "$tmp/"
 zip_flat "$tmp" "$OUT/tic80-v$SHORT-html.zip"
 rm -rf "$tmp"
 
@@ -133,7 +134,7 @@ pack_file "$ART/tic80-learn/learn.md" "$OUT/tic80-v$SHORT-learn.md"
 # scriptLanguages in the server's internal/httpapi/export.go: a language
 # added to the engine but missed here degrades to a universal-stub download
 # (a bigger binary, not an error), so nothing will tell you.
-STUB_LANGS="lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript gravity"
+STUB_LANGS="lua ruby js moon yue fennel scheme squirrel wren wasm janet python miniscript forth gravity"
 
 # A per-language stub is a game, not an IDE: the PRO alone export hands the
 # cartridge to someone who should only be able to play it. Every job builds
@@ -230,6 +231,8 @@ if [ -d "$ART" ]; then
         mkdir -p "$stage"
         cp "$loader" "$stage/tic80.js"
         cp "$wasm" "$stage/"
+        # the page's icon: an export gets the same favicon the site has
+        cp "$hdir/favicon.ico" "$stage/"
         # zip appends .zip to a name that lacks it; the client asks for
         # /export/<tag>/<system><lang> with no extension (console.c exportGame)
         zip_flat "$stage" "$tmp/$name.zip"
