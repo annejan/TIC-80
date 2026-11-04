@@ -50,14 +50,21 @@ set(TIC80_TANMATSU_STUDIO_SRCS
     ${TIC80_SRC}/studio/screens/console.c
     ${TIC80_SRC}/studio/screens/surf.c
     ${TIC80_BACKEND}/net.c
-    ${TIC80_SRC}/studio/editors/code.c
-    ${TIC80_SRC}/studio/editors/sprite.c
-    ${TIC80_SRC}/studio/editors/map.c
-    ${TIC80_SRC}/studio/editors/world.c
-    ${TIC80_SRC}/studio/editors/sfx.c
-    ${TIC80_SRC}/studio/editors/music.c
+    ${TIC80_SRC}/studio/clipboard.c
+    ${TIC80_SRC}/studio/editors/code/text.c
+    ${TIC80_SRC}/studio/editors/code/find.c
+    ${TIC80_SRC}/studio/editors/code/vi.c
+    ${TIC80_SRC}/studio/editors/code/minimap.c
+    ${TIC80_SRC}/studio/editors/code/code.c
+    ${TIC80_SRC}/studio/editors/sprite/sprite.c
+    ${TIC80_SRC}/studio/editors/map/map.c
+    ${TIC80_SRC}/studio/editors/map/world.c
+    ${TIC80_SRC}/studio/editors/sfx/sfx.c
+    ${TIC80_SRC}/studio/editors/music/music.c
     ${TIC80_SRC}/studio/studio.c
+    ${TIC80_SRC}/studio/modes.c
     ${TIC80_SRC}/studio/boot.c
+    ${TIC80_SRC}/studio/anim.c
     ${TIC80_SRC}/studio/embed.c
     ${TIC80_SRC}/studio/sound.c
     ${TIC80_SRC}/studio/ui.c
@@ -65,6 +72,7 @@ set(TIC80_TANMATSU_STUDIO_SRCS
     ${TIC80_SRC}/studio/mouse.c
     ${TIC80_SRC}/studio/menubar.c
     ${TIC80_SRC}/studio/studiomenu.c
+    ${TIC80_SRC}/studio/export.c
     ${TIC80_SRC}/studio/rom.c
     ${TIC80_SRC}/studio/config.c
     ${TIC80_SRC}/studio/fs.c
