@@ -28,10 +28,8 @@ idf_component_register(
         esp_driver_i2s
         esp_mm
         esp_driver_ppa
-        # USB HID host, for a keyboard, mouse or gamepad on the port.
-        usb
-        usb_host_hid
-        hid-host
+        # USB keyboards, mice and gamepads on the port.
+        usb-input
         fatfs
         wear_levelling
         nvs_flash
