@@ -38,7 +38,6 @@
 #include <string.h>
 
 #include "esp_http_client.h"
-#include "esp_netif.h"
 #include "esp_tls.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -195,29 +194,6 @@ static void wifi_task(void* arg)
     vTaskDelete(NULL);
 }
 
-// lwIP sends anything that is not on the local subnet through the default
-// interface. Getting an address does not make an interface the default one, and
-// without it DNS still works, because the server is usually on-link, while
-// everything beyond the gateway fails at once with "Host is unreachable".
-static void claim_default_route(void)
-{
-    esp_netif_t* sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-
-    if(sta == NULL)
-    {
-        ESP_LOGW(TAG, "No station interface to route through");
-        return;
-    }
-
-    if(esp_netif_get_default_netif() == sta)
-    {
-        return;
-    }
-
-    esp_err_t res = esp_netif_set_default_netif(sta);
-    ESP_LOGI(TAG, "Routing through the station interface: %s", esp_err_to_name(res));
-}
-
 // Waits for the radio, but only as long as a person would tolerate before
 // deciding the thing is broken. Bringing the coprocessor up, associating and
 // getting a lease took about 35 seconds from cold on the first try, so this has
@@ -264,7 +240,6 @@ static bool network_available(void)
     {
         if(wifi_connection_is_connected())
         {
-            claim_default_route();
             return true;
         }
 
