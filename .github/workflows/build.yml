@@ -599,6 +599,49 @@ jobs:
           name: "tic80-nintendo-switch"
           path: build/bin/tic80.nro
 
+  # === Tanmatsu (ESP32-P4) ===
+  tanmatsu:
+    # 24.04, not -latest: the label moves to 26.04 (runner-images#14748).
+    runs-on: ubuntu-24.04
+    # The port is an ESP-IDF project. The image has the ESP-IDF version that
+    # src/system/tanmatsu/project/Makefile names, and nothing else is needed.
+    container: espressif/idf:v6.0.2
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # The container runs as root and the checkout belongs to the runner, so
+      # git refuses the tree until it is marked safe. Without that,
+      # version.cmake cannot read the tags, and the build calls itself a release.
+      #
+      # Only the libraries that the port compiles are checked out. The port's
+      # CMake files name them, and the language runtimes that it leaves out are
+      # most of a recursive checkout.
+      - name: Submodules
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git submodule update --init --depth 1 $(grep -oh 'TIC80_VENDOR}/[A-Za-z0-9_-]*' \
+            cmake/tanmatsu.cmake src/system/tanmatsu/CMakeLists.txt | sed 's|.*}/|vendor/|' | sort -u)
+
+      - name: Build
+        shell: bash
+        working-directory: src/system/tanmatsu/project
+        run: |
+          . "$IDF_PATH/export.sh"
+          idf.py -B build/tanmatsu -DDEVICE=tanmatsu \
+            "-DSDKCONFIG_DEFAULTS=sdkconfigs/general;sdkconfigs/tanmatsu" \
+            -DSDKCONFIG=sdkconfig_tanmatsu -DIDF_TARGET=esp32p4 -DFAT=0 build
+
+      - name: Deploy
+        uses: actions/upload-artifact@v6
+        with:
+          if-no-files-found: error
+          name: "tic80-tanmatsu"
+          path: src/system/tanmatsu/project/build/tanmatsu/tic80.bin
+
   # === MacOS 15 / arm64 ===
   macos-arm64:
     runs-on: macos-15
